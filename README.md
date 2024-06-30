@@ -3,7 +3,7 @@ All files from anonymous, No need for an Android emulator to decrypt alac
 
 
 ### 安装
-推荐Windows Subsystem for Linux (WSL)使用
+推荐[Windows Subsystem for Linux (WSL)](https://github.com/bostrot/wsl2-distro-manager)使用
 usage:  `./wrapper [port] ([username] [password])`
 
 ```shell
