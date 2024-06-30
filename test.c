@@ -388,7 +388,7 @@ inline static int new_socket() {
         return EXIT_FAILURE;
     }
 
-    fprintf(stderr, "[!] listening 127.0.0.1:%d\n", port);
+    fprintf(stderr, "[!] listening 0.0.0.0:%d\n", port);
     close(STDOUT_FILENO);
 
     static struct sockaddr_in peer_addr;
