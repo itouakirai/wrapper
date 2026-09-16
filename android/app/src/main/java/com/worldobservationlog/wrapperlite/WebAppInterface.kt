@@ -8,6 +8,8 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import org.json.JSONObject
+import java.io.File
+import java.io.FileInputStream
 import java.net.HttpURLConnection
 import java.net.URL
 
@@ -94,41 +96,48 @@ class WebAppInterface(
             "kvs.sqlitedb".toByteArray(Charsets.UTF_8)
         )
 
+        var found = false
+        var fis: FileInputStream? = null
         try {
-            disk.inputStream().buffered().use { input ->
-                val buf = ByteArray(1024 * 1024) // 1MB buffer
-                var overlap: ByteArray? = null
-                val maxChunks = 64 // Scan up to 64MB partition
-                for (chunkIdx in 0 until maxChunks) {
-                    val bytesRead = input.read(buf)
-                    if (bytesRead <= 0) break
+            fis = FileInputStream(disk)
+            val buf = ByteArray(1024 * 1024) // 1MB buffer
+            var overlap: ByteArray? = null
+            val maxChunks = 64 // Scan up to 64MB partition
+            for (chunkIdx in 0 until maxChunks) {
+                val bytesRead = fis.read(buf)
+                if (bytesRead <= 0) break
 
-                    val chunk: ByteArray
-                    if (overlap != null) {
-                        chunk = ByteArray(overlap.size + bytesRead)
-                        System.arraycopy(overlap, 0, chunk, 0, overlap.size)
-                        System.arraycopy(buf, 0, chunk, overlap.size, bytesRead)
-                    } else {
-                        chunk = if (bytesRead == buf.size) buf else buf.copyOf(bytesRead)
-                    }
+                val chunk: ByteArray
+                if (overlap != null) {
+                    chunk = ByteArray(overlap.size + bytesRead)
+                    System.arraycopy(overlap, 0, chunk, 0, overlap.size)
+                    System.arraycopy(buf, 0, chunk, overlap.size, bytesRead)
+                } else {
+                    chunk = if (bytesRead == buf.size) buf else buf.copyOf(bytesRead)
+                }
 
-                    for (sig in signatures) {
-                        if (containsSubarray(chunk, sig)) {
-                            return true
-                        }
+                for (sig in signatures) {
+                    if (containsSubarray(chunk, sig)) {
+                        found = true
+                        break
                     }
+                }
+                if (found) break
 
-                    overlap = if (bytesRead >= 64) {
-                        buf.copyOfRange(bytesRead - 64, bytesRead)
-                    } else {
-                        null
-                    }
+                overlap = if (bytesRead >= 64) {
+                    buf.copyOfRange(bytesRead - 64, bytesRead)
+                } else {
+                    null
                 }
             }
         } catch (e: Exception) {
             // best effort
+        } finally {
+            try {
+                fis?.close()
+            } catch (e: Exception) {}
         }
-        return false
+        return found
     }
 
     private fun containsSubarray(source: ByteArray, target: ByteArray): Boolean {
