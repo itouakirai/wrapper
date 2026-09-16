@@ -67,8 +67,30 @@ class QemuAssetManager(private val context: Context) {
         }
     }
 
+    private fun isElfFile(file: File): Boolean {
+        if (!file.exists() || !file.isFile || file.length() < 4) return false
+        return try {
+            file.inputStream().use { input ->
+                val header = ByteArray(4)
+                if (input.read(header) == 4) {
+                    header[0] == 0x7f.toByte() &&
+                    header[1] == 'E'.code.toByte() &&
+                    header[2] == 'L'.code.toByte() &&
+                    header[3] == 'F'.code.toByte()
+                } else false
+            }
+        } catch (e: Exception) {
+            false
+        }
+    }
+
     fun checkStatus(): Map<String, Boolean> {
-        val qemuBin = getQemuExecutable().exists() && (getQemuExecutable().canExecute() || true)
+        val qemuExe = getQemuExecutable()
+        val qemuDir = qemuExe.parentFile ?: binDir
+        val pixmanLib = File(qemuDir, "libpixman-1.so")
+        // QEMU binary is only considered ready if the executable exists AND critical libraries are bundled
+        val librariesReady = pixmanLib.exists() || File(binDir, "libpixman-1.so").exists()
+        val qemuBin = qemuExe.exists() && librariesReady
         val launcher = getLauncherExecutable().exists()
         val kernel = getKernel().exists()
         val initramfs = getInitramfs().exists()
@@ -85,6 +107,71 @@ class QemuAssetManager(private val context: Context) {
         )
     }
 
+    fun fixPermissionsAndLibraries(baseDir: File) {
+        if (!baseDir.exists()) return
+
+        // Pass 1: resolve pseudo-symlinks (plain text pointer files from zip extraction)
+        baseDir.walkTopDown().filter { it.isFile }.forEach { f ->
+            if (f.name.contains(".so") && !isElfFile(f) && f.length() in 1..1024) {
+                try {
+                    val visited = mutableSetOf<File>(f)
+                    var currentTargetName = f.readText(Charsets.UTF_8).trim()
+                    var realElfFile: File? = null
+
+                    while (currentTargetName.isNotEmpty() && visited.size < 10) {
+                        var candidate = File(f.parentFile, currentTargetName)
+                        if (!candidate.exists()) {
+                            candidate = File(f.parentFile, File(currentTargetName).name)
+                        }
+                        if (!candidate.exists() && baseDir != f.parentFile) {
+                            candidate = File(baseDir, File(currentTargetName).name)
+                        }
+                        if (!candidate.exists() || !candidate.isFile || !visited.add(candidate)) {
+                            break
+                        }
+                        if (isElfFile(candidate)) {
+                            realElfFile = candidate
+                            break
+                        }
+                        if (candidate.length() in 1..1024) {
+                            currentTargetName = candidate.readText(Charsets.UTF_8).trim()
+                        } else {
+                            break
+                        }
+                    }
+
+                    if (realElfFile != null && realElfFile.exists()) {
+                        Log.d(TAG, "Resolving pseudo-symlink ${f.name} -> ${realElfFile.name}")
+                        realElfFile.copyTo(f, overwrite = true)
+                    }
+                } catch (e: Exception) {
+                    Log.w(TAG, "Failed resolving pseudo-symlink for ${f.name}", e)
+                }
+            }
+        }
+
+        // Pass 2: batch set executable permissions via recursive chmod, with individual fallback
+        try {
+            Runtime.getRuntime().exec(arrayOf("chmod", "-R", "755", baseDir.absolutePath)).waitFor()
+        } catch (e: Exception) {
+            // best effort
+        }
+
+        baseDir.walkTopDown().filter { it.isFile }.forEach { f ->
+            val name = f.name
+            val parentName = f.parentFile?.name ?: ""
+            if (parentName in listOf("bin", "lib") ||
+                name.contains(".so") ||
+                name.startsWith("qemu-system-") ||
+                name == "wrapper-lite-qemu" ||
+                name == "wrapper-lite-gui"
+            ) {
+                f.setExecutable(true, false)
+                f.setReadable(true, false)
+            }
+        }
+    }
+
     /**
      * Extracts prebundled assets from APK assets/qemu if present.
      */
@@ -99,7 +186,10 @@ class QemuAssetManager(private val context: Context) {
 
             copyAssetFolder("qemu", qemuDir)
 
-            // Ensure executable permissions for QEMU and launcher
+            // Ensure executable permissions and resolve libraries
+            fixPermissionsAndLibraries(qemuDir)
+            fixPermissionsAndLibraries(context.filesDir)
+
             val qemuExe = getQemuExecutable()
             makeExecutable(qemuExe)
 
@@ -128,22 +218,26 @@ class QemuAssetManager(private val context: Context) {
 
     private fun copyAssetFolder(srcName: String, dstDir: File) {
         val assetManager = context.assets
-        val fileList = assetManager.list(srcName) ?: return
-        if (fileList.isEmpty()) {
-            // It's a file
-            copyAssetFile(srcName, dstDir)
-        } else {
-            dstDir.mkdirs()
-            for (filename in fileList) {
-                copyAssetFolder("$srcName/$filename", File(dstDir, filename))
+        try {
+            // Try opening as a file stream first
+            assetManager.open(srcName).use { input ->
+                if (dstDir.name == "data.img" && dstDir.exists() && dstDir.length() > 0) {
+                    return
+                }
+                dstDir.parentFile?.mkdirs()
+                FileOutputStream(dstDir).use { output ->
+                    input.copyTo(output)
+                }
             }
-        }
-    }
-
-    private fun copyAssetFile(srcName: String, dstFile: File) {
-        context.assets.open(srcName).use { input ->
-            FileOutputStream(dstFile).use { output ->
-                input.copyTo(output)
+        } catch (e: Exception) {
+            // It is a directory: recurse over children
+            val children = assetManager.list(srcName) ?: return
+            if (children.isNotEmpty()) {
+                dstDir.mkdirs()
+                for (child in children) {
+                    val subSrc = if (srcName.isEmpty()) child else "$srcName/$child"
+                    copyAssetFolder(subSrc, File(dstDir, child))
+                }
             }
         }
     }
@@ -211,7 +305,10 @@ class QemuAssetManager(private val context: Context) {
             unzip(tempZip, context.filesDir)
             tempZip.delete()
 
-            // Ensure executable permissions
+            // Ensure executable permissions and resolve libraries
+            fixPermissionsAndLibraries(context.filesDir)
+            fixPermissionsAndLibraries(qemuDir)
+
             makeExecutable(getQemuExecutable())
             makeExecutable(getLauncherExecutable())
 
@@ -253,14 +350,22 @@ class QemuAssetManager(private val context: Context) {
                 if (entry.isDirectory) {
                     outFile.mkdirs()
                 } else {
+                    // Do not overwrite existing user data disk
+                    if (outFile.name == "data.img" && outFile.exists() && outFile.length() > 0) {
+                        zis.closeEntry()
+                        entry = zis.nextEntry
+                        continue
+                    }
                     outFile.parentFile?.mkdirs()
                     FileOutputStream(outFile).use { fos ->
                         zis.copyTo(fos)
                     }
                     val name = entry.name
-                    if (name.contains("bin/") || name.endsWith("wrapper-lite-qemu") ||
-                        name.endsWith("qemu-system-x86_64") || name.endsWith(".so")) {
-                        makeExecutable(outFile)
+                    if (name.contains("bin/") || name.contains("lib/") ||
+                        name.contains(".so") || name.contains("qemu-system-") ||
+                        name.endsWith("wrapper-lite-qemu") || name.endsWith("wrapper-lite-gui")) {
+                        outFile.setExecutable(true, false)
+                        outFile.setReadable(true, false)
                     }
                 }
                 zis.closeEntry()

@@ -130,3 +130,7 @@ dist-qemu-assets/
 android/.gradle/
 android/app/build/
 android/app/src/main/assets/qemu/
+
+# Python cache
+__pycache__/
+*.pyc

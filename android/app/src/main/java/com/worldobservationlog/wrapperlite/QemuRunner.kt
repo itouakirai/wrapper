@@ -95,11 +95,8 @@ class QemuRunner(private val context: Context, private val assetManager: QemuAss
         val pb = ProcessBuilder(cmd)
         pb.directory(assetManager.qemuDir)
 
-        // Set up environment for Termux headless QEMU
         val env = pb.environment()
-        val existingLd = env["LD_LIBRARY_PATH"] ?: ""
-        env["LD_LIBRARY_PATH"] = "${binDir.absolutePath}:$existingLd"
-        env["QEMU_MODULE_DIR"] = binDir.absolutePath
+        setupEnvironment(env, binDir)
 
         try {
             onLog("[run] Starting headless QEMU (guest forwarding to $host:$port, mem ${memory}MB)...")
@@ -215,9 +212,7 @@ class QemuRunner(private val context: Context, private val assetManager: QemuAss
         pb.directory(assetManager.qemuDir)
 
         val env = pb.environment()
-        val existingLd = env["LD_LIBRARY_PATH"] ?: ""
-        env["LD_LIBRARY_PATH"] = "${binDir.absolutePath}:$existingLd"
-        env["QEMU_MODULE_DIR"] = binDir.absolutePath
+        setupEnvironment(env, binDir)
 
         val outputLines = mutableListOf<String>()
         var need2FA = false
@@ -285,5 +280,34 @@ class QemuRunner(private val context: Context, private val assetManager: QemuAss
         }
         isRunning = false
         process = null
+    }
+
+    private fun setupEnvironment(env: MutableMap<String, String>, binDir: File) {
+        val ldPaths = mutableListOf<String>()
+        val qemuExe = assetManager.getQemuExecutable()
+        if (qemuExe.parentFile != null && qemuExe.parentFile.exists()) {
+            ldPaths.add(qemuExe.parentFile.absolutePath)
+        }
+        ldPaths.add(binDir.absolutePath)
+        val qemuLibDir = File(assetManager.qemuDir, "lib")
+        if (qemuLibDir.exists()) ldPaths.add(qemuLibDir.absolutePath)
+        val filesLibDir = File(context.filesDir, "lib")
+        if (filesLibDir.exists()) ldPaths.add(filesLibDir.absolutePath)
+        val filesBinDir = File(context.filesDir, "bin")
+        if (filesBinDir.exists()) ldPaths.add(filesBinDir.absolutePath)
+        val nativeLibDir = context.applicationInfo.nativeLibraryDir
+        if (!nativeLibDir.isNullOrBlank()) {
+            ldPaths.add(nativeLibDir)
+        }
+        val existingLd = env["LD_LIBRARY_PATH"]
+        if (!existingLd.isNullOrBlank()) {
+            ldPaths.add(existingLd)
+        }
+        env["LD_LIBRARY_PATH"] = ldPaths.filter { it.isNotBlank() }.distinct().joinToString(":")
+        env["QEMU_MODULE_DIR"] = binDir.absolutePath
+        env["TMPDIR"] = context.cacheDir.absolutePath
+        if (env["PATH"].isNullOrBlank()) {
+            env["PATH"] = "/system/bin:/system/xbin"
+        }
     }
 }

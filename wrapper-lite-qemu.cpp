@@ -229,13 +229,24 @@ static std::vector<std::string> buildQemuArgs(const std::string& qemuBin,
        libraries we ship next to it in qemu/bin; make the loader find them
        without requiring a system install. */
     std::string libPath = dir + "/bin";
+    if (fileExists(dir + "/lib")) {
+        libPath += ":" + dir + "/lib";
+    }
+    size_t lastSlash = qemuBin.find_last_of("/\\");
+    if (lastSlash != std::string::npos) {
+        std::string qemuBinDir = qemuBin.substr(0, lastSlash);
+        if (qemuBinDir != dir + "/bin" && fileExists(qemuBinDir)) {
+            libPath += ":" + qemuBinDir;
+        }
+    }
     const char* existing = std::getenv("LD_LIBRARY_PATH");
     if (existing && *existing) libPath = libPath + ":" + existing;
     setenv("LD_LIBRARY_PATH", libPath.c_str(), 1);
     /* QEMU accel/device modules (accel-tcg-*.so, ...) are looked up via the
        QEMU_MODULE_DIR env var; point it at the bundled modules when present. */
     if (fileExists(dir + "/bin/accel-tcg-x86_64.so") ||
-        fileExists(dir + "/bin/accel-tcg-i386.so")) {
+        fileExists(dir + "/bin/accel-tcg-i386.so") ||
+        fileExists(dir + "/bin")) {
         setenv("QEMU_MODULE_DIR", (dir + "/bin").c_str(), 1);
     }
 #endif
