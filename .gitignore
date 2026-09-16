@@ -74,6 +74,7 @@ dkms.conf
 
 # Fortran module files
 *.mod
+!go.mod
 *.smod
 
 # Compiled Static libraries
@@ -89,8 +90,10 @@ dkms.conf
 
 rootfs/
 .vscode/
-wrapper
-wrapper-rootless
+/wrapper
+/wrapper-rootless
+!android/gradle/wrapper/
+!android/gradle/wrapper/**
 rootfs/system/bin/linker64
 build/
 android-ndk-r23b/
@@ -117,3 +120,13 @@ run
 run.cpp
 build-run.sh
 build-run/
+
+# GUI and Android build outputs
+dist-gui/
+dist/
+dist-apk/
+dist-native/
+dist-qemu-assets/
+android/.gradle/
+android/app/build/
+android/app/src/main/assets/qemu/

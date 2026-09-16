@@ -1,0 +1,289 @@
+package com.worldobservationlog.wrapperlite
+
+import android.content.Context
+import android.util.Base64
+import android.util.Log
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
+import java.io.BufferedReader
+import java.io.File
+import java.io.InputStreamReader
+
+class QemuRunner(private val context: Context, private val assetManager: QemuAssetManager) {
+
+    companion object {
+        private const val TAG = "QemuRunner"
+    }
+
+    private var process: Process? = null
+    var isRunning: Boolean = false
+        private set
+
+    fun start(
+        host: String = "0.0.0.0",
+        port: Int = 12340,
+        memory: String = "512",
+        smp: String = "2",
+        proxy: String = "",
+        logLevel: String = "info",
+        refreshInterval: String = "1800",
+        onLog: (String) -> Unit
+    ): Boolean {
+        if (isRunning) return false
+
+        val qemuBin = assetManager.getQemuExecutable()
+        val kernel = assetManager.getKernel()
+        val initramfs = assetManager.getInitramfs()
+        val disk = assetManager.getDataDisk()
+        val binDir = assetManager.binDir
+
+        if (!qemuBin.exists() || !kernel.exists() || !initramfs.exists() || !disk.exists()) {
+            onLog("[error] Missing QEMU components. Please download QEMU package from the 'QEMU Package' tab.")
+            return false
+        }
+
+        // Build guest lite arguments
+        val guestArgsList = mutableListOf(
+            "--base-dir", "/data",
+            "--host", "0.0.0.0",
+            "--port", "12340"
+        )
+        if (proxy.isNotBlank()) {
+            guestArgsList.add("--proxy")
+            guestArgsList.add(proxy)
+        }
+        if (logLevel.isNotBlank()) {
+            guestArgsList.add("--log-level")
+            guestArgsList.add(logLevel)
+        }
+        if (refreshInterval.isNotBlank()) {
+            guestArgsList.add("--token-refresh-interval")
+            guestArgsList.add(refreshInterval)
+        }
+
+        val guestArgsStr = guestArgsList.joinToString("\n")
+        val b64Args = Base64.encodeToString(guestArgsStr.toByteArray(Charsets.UTF_8), Base64.NO_WRAP)
+        val appendStr = "console=ttyS0 quiet net.ifnames=0 biosdevname=0 lite_args_b64=$b64Args"
+
+        val argsFile = File(assetManager.qemuDir, ".lite-qemu-args")
+        try {
+            argsFile.writeText(guestArgsStr)
+        } catch (e: Exception) {}
+
+        // Build QEMU arguments
+        val cmd = mutableListOf(
+            qemuBin.absolutePath,
+            "-L", binDir.absolutePath,
+            "-accel", "tcg",
+            "-cpu", "max",
+            "-m", memory,
+            "-smp", smp,
+            "-kernel", kernel.absolutePath,
+            "-initrd", initramfs.absolutePath,
+            "-append", appendStr,
+            "-display", "none",
+            "-serial", "stdio",
+            "-no-reboot",
+            "-nic", "user,model=e1000,hostfwd=tcp:$host:$port-:12340",
+            "-drive", "file=${disk.absolutePath},format=raw,if=virtio"
+        )
+        if (argsFile.exists()) {
+            cmd.add("-fw_cfg")
+            cmd.add("name=lite_args,file=${argsFile.absolutePath}")
+        }
+
+        val pb = ProcessBuilder(cmd)
+        pb.directory(assetManager.qemuDir)
+
+        // Set up environment for Termux headless QEMU
+        val env = pb.environment()
+        val existingLd = env["LD_LIBRARY_PATH"] ?: ""
+        env["LD_LIBRARY_PATH"] = "${binDir.absolutePath}:$existingLd"
+        env["QEMU_MODULE_DIR"] = binDir.absolutePath
+
+        try {
+            onLog("[run] Starting headless QEMU (guest forwarding to $host:$port, mem ${memory}MB)...")
+            val proc = pb.start()
+            process = proc
+            isRunning = true
+
+            // Read stdout & stderr
+            Thread {
+                val reader = BufferedReader(InputStreamReader(proc.inputStream))
+                var line: String?
+                while (reader.readLine().also { line = it } != null) {
+                    line?.let { onLog(it) }
+                }
+            }.start()
+
+            Thread {
+                val errReader = BufferedReader(InputStreamReader(proc.errorStream))
+                var line: String?
+                while (errReader.readLine().also { line = it } != null) {
+                    line?.let { onLog(it) }
+                }
+            }.start()
+
+            Thread {
+                val exitCode = proc.waitFor()
+                isRunning = false
+                process = null
+                argsFile.delete()
+                onLog("[run] QEMU process exited with code $exitCode")
+            }.start()
+
+            return true
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to start QEMU", e)
+            onLog("[error] Failed to start QEMU process: ${e.message}")
+            isRunning = false
+            argsFile.delete()
+            return false
+        }
+    }
+
+    fun login(
+        username: String,
+        password: String,
+        twoFactor: String = "",
+        proxy: String = "",
+        deviceInfo: String = "",
+        onLog: (String) -> Unit
+    ): Pair<Boolean, String> {
+        if (isRunning) {
+            return Pair(false, "Cannot login while service is running. Stop service first.")
+        }
+
+        val qemuBin = assetManager.getQemuExecutable()
+        val kernel = assetManager.getKernel()
+        val initramfs = assetManager.getInitramfs()
+        val disk = assetManager.getDataDisk()
+        val binDir = assetManager.binDir
+
+        if (!qemuBin.exists() || !kernel.exists() || !initramfs.exists() || !disk.exists()) {
+            return Pair(false, "Missing QEMU components. Please download QEMU package from the 'QEMU Package' tab.")
+        }
+
+        val fullPassword = if (twoFactor.isNotBlank()) password + twoFactor else password
+        val loginCred = "$username:$fullPassword"
+
+        val guestArgsList = mutableListOf(
+            "--base-dir", "/data",
+            "--login", loginCred,
+            "--code-from-file"
+        )
+        if (proxy.isNotBlank()) {
+            guestArgsList.add("--proxy")
+            guestArgsList.add(proxy)
+        }
+        if (deviceInfo.isNotBlank()) {
+            guestArgsList.add("--device-info")
+            guestArgsList.add(deviceInfo)
+        }
+
+        val guestArgsStr = guestArgsList.joinToString("\n")
+        val b64Args = Base64.encodeToString(guestArgsStr.toByteArray(Charsets.UTF_8), Base64.NO_WRAP)
+        val appendStr = "console=ttyS0 quiet net.ifnames=0 biosdevname=0 lite_args_b64=$b64Args"
+
+        val argsFile = File(assetManager.qemuDir, ".lite-qemu-args")
+        try {
+            argsFile.writeText(guestArgsStr)
+        } catch (e: Exception) {}
+
+        val cmd = mutableListOf(
+            qemuBin.absolutePath,
+            "-L", binDir.absolutePath,
+            "-accel", "tcg",
+            "-cpu", "max",
+            "-m", "512",
+            "-smp", "2",
+            "-kernel", kernel.absolutePath,
+            "-initrd", initramfs.absolutePath,
+            "-append", appendStr,
+            "-display", "none",
+            "-serial", "stdio",
+            "-no-reboot",
+            "-nic", "user,model=e1000",
+            "-drive", "file=${disk.absolutePath},format=raw,if=virtio"
+        )
+        if (argsFile.exists()) {
+            cmd.add("-fw_cfg")
+            cmd.add("name=lite_args,file=${argsFile.absolutePath}")
+        }
+
+        val pb = ProcessBuilder(cmd)
+        pb.directory(assetManager.qemuDir)
+
+        val env = pb.environment()
+        val existingLd = env["LD_LIBRARY_PATH"] ?: ""
+        env["LD_LIBRARY_PATH"] = "${binDir.absolutePath}:$existingLd"
+        env["QEMU_MODULE_DIR"] = binDir.absolutePath
+
+        val outputLines = mutableListOf<String>()
+        var need2FA = false
+
+        try {
+            onLog("[auth] Running Apple Music login in QEMU guest for account $username...")
+            val proc = pb.start()
+
+            val stdoutThread = Thread {
+                val reader = BufferedReader(InputStreamReader(proc.inputStream))
+                var line: String?
+                while (reader.readLine().also { line = it } != null) {
+                    line?.let {
+                        outputLines.add(it)
+                        onLog(it)
+                        if (it.contains("need2FA: true") || it.contains("2FA code")) {
+                            need2FA = true
+                        }
+                    }
+                }
+            }
+            val stderrThread = Thread {
+                val errReader = BufferedReader(InputStreamReader(proc.errorStream))
+                var line: String?
+                while (errReader.readLine().also { line = it } != null) {
+                    line?.let {
+                        outputLines.add(it)
+                        onLog(it)
+                        if (it.contains("need2FA: true") || it.contains("2FA code")) {
+                            need2FA = true
+                        }
+                    }
+                }
+            }
+            stdoutThread.start()
+            stderrThread.start()
+
+            val exitCode = proc.waitFor()
+            stdoutThread.join(2000)
+            stderrThread.join(2000)
+            argsFile.delete()
+
+            val fullOutput = outputLines.joinToString("\n")
+            if (need2FA || fullOutput.contains("need2FA: true") || fullOutput.contains("2FA code")) {
+                return Pair(false, "2FA")
+            }
+            if (exitCode == 0 && (fullOutput.contains("login successful") || fullOutput.contains("login complete") || fullOutput.contains("Tokens cached"))) {
+                return Pair(true, "Login successful! Decryption tokens cached.")
+            } else {
+                return Pair(false, "Login exited with code $exitCode. Check credentials and logs.")
+            }
+        } catch (e: Exception) {
+            argsFile.delete()
+            return Pair(false, "Login failed: ${e.message}")
+        }
+    }
+
+    fun stop() {
+        process?.let {
+            try {
+                it.destroy()
+            } catch (e: Exception) {
+                Log.e(TAG, "Error destroying QEMU process", e)
+            }
+        }
+        isRunning = false
+        process = null
+    }
+}

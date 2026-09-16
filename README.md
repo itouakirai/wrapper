@@ -4,10 +4,27 @@ A lightweight single-port HTTP wrapper for Apple Music decryption.
 
 It provides five endpoints on one HTTP port: M3U8, Key, Lyrics, License, and WebPlayback.
 
-> **Recommended way to run**: use the `wrapper-lite-qemu` launcher — it boots a
+> **Recommended way to run**: use the `wrapper-lite-gui` cross-platform GUI or `wrapper-lite-qemu` launcher — it boots a
 > self-contained QEMU guest and forwards the HTTP API to the host, so you don't
 > need a rooted device or a native chroot. See
-> [Run with QEMU](#run-with-qemu-recommended).
+> [Cross-Platform GUI](#cross-platform-gui) and [Run with QEMU](#run-with-qemu-recommended).
+
+## Cross-Platform GUI (Windows, macOS, Linux, Android)
+
+A modern, responsive cross-platform GUI is available for **Windows**, **macOS**, **Linux**, and **Android**.
+
+- **Non-Linux systems (Windows, macOS)**: directly leverage precompiled QEMU packages or download them with one click from [nightly.link](https://nightly.link/WorldObservationLog/wrapper/workflows/build-lite/lite?preview).
+- **Android**: native Android app with embedded `qemu-system-x86-64-headless` (Termux build) running QEMU in a Foreground Service with WakeLock.
+- **Linux**: supports both native rootless execution and QEMU virtualized guest mode.
+
+### Quick Start
+
+- **Windows**: run `wrapper-lite-gui.exe` (auto-opens browser to `http://127.0.0.1:12341`).
+- **macOS**: run `./wrapper-lite-gui` (macOS arm64/x86_64).
+- **Linux**: run `./wrapper-lite-gui` (Linux x86_64/aarch64).
+- **Android**: install `wrapper-lite-android.apk` (or run `./wrapper-lite-gui-android-aarch64` in Termux).
+
+See [gui/README.md](gui/README.md) for detailed configuration and build instructions.
 
 ## Build
 

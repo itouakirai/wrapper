@@ -1,0 +1,556 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>wrapper-lite GUI</title>
+  <link rel="icon" type="image/svg+xml" href="favicon.svg">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body class="dark-theme">
+  <div id="app" class="app-container">
+    <!-- Header -->
+    <header class="app-header">
+      <div class="brand">
+        <div class="logo-icon">
+          <svg viewBox="0 0 24 24" width="28" height="28" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M9 18V5l12-2v13"></path>
+            <circle cx="6" cy="18" r="3"></circle>
+            <circle cx="18" cy="16" r="3"></circle>
+          </svg>
+        </div>
+        <div class="brand-text">
+          <h1>wrapper-lite</h1>
+          <span class="sub-badge" id="platform-badge">Cross-Platform GUI</span>
+        </div>
+      </div>
+
+      <div class="header-status">
+        <div class="status-indicator-pill" id="service-status-pill">
+          <span class="status-dot stopped" id="status-dot"></span>
+          <span class="status-text" id="status-text">Stopped</span>
+        </div>
+        <button class="icon-btn" id="theme-toggle-btn" title="Toggle Theme" aria-label="Toggle Theme">
+          <svg id="moon-icon" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path>
+          </svg>
+          <svg id="sun-icon" class="hidden" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2">
+            <circle cx="12" cy="12" r="5"></circle>
+            <line x1="12" y1="1" x2="12" y2="3"></line>
+            <line x1="12" y1="21" x2="12" y2="23"></line>
+            <line x1="4.22" y1="4.22" x2="5.64" y2="5.64"></line>
+            <line x1="18.36" y1="18.36" x2="19.78" y2="19.78"></line>
+            <line x1="1" y1="12" x2="3" y2="12"></line>
+            <line x1="21" y1="12" x2="23" y2="12"></line>
+            <line x1="4.22" y1="19.78" x2="5.64" y2="18.36"></line>
+            <line x1="18.36" y1="5.64" x2="19.78" y2="4.22"></line>
+          </svg>
+        </button>
+      </div>
+    </header>
+
+    <!-- Quick Control Bar -->
+    <section class="control-bar card">
+      <div class="actions">
+        <button class="btn btn-primary" id="btn-start" onclick="handleStart()">
+          <svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor">
+            <polygon points="5 3 19 12 5 21 5 3"></polygon>
+          </svg>
+          <span>Start Service</span>
+        </button>
+        <button class="btn btn-danger hidden" id="btn-stop" onclick="handleStop()">
+          <svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor">
+            <rect x="6" y="6" width="12" height="12"></rect>
+          </svg>
+          <span>Stop Service</span>
+        </button>
+        <button class="btn btn-secondary" id="btn-restart" onclick="handleRestart()">
+          <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2">
+            <polyline points="23 4 23 10 17 10"></polyline>
+            <polyline points="1 20 1 14 7 14"></polyline>
+            <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path>
+          </svg>
+          <span>Restart</span>
+        </button>
+        <button class="btn btn-ghost" id="btn-open-browser" onclick="openServiceUrl()">
+          <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path>
+            <polyline points="15 3 21 3 21 9"></polyline>
+            <line x1="10" y1="14" x2="21" y2="3"></line>
+          </svg>
+          <span>Open API</span>
+        </button>
+      </div>
+
+      <div class="service-url-box">
+        <span class="url-label">Endpoint:</span>
+        <code id="display-service-url">http://127.0.0.1:12340</code>
+        <button class="icon-btn-small" onclick="copyServiceUrl()" title="Copy URL">
+          <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2">
+            <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
+            <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
+          </svg>
+        </button>
+      </div>
+    </section>
+
+    <!-- Navigation Tabs -->
+    <nav class="nav-tabs">
+      <button class="tab-btn active" data-tab="dashboard">Dashboard</button>
+      <button class="tab-btn" data-tab="config">Settings</button>
+      <button class="tab-btn" data-tab="account">Account &amp; Auth</button>
+      <button class="tab-btn" data-tab="qemu">QEMU Package</button>
+      <button class="tab-btn" data-tab="tester">API Tester</button>
+      <button class="tab-btn" data-tab="logs">Live Logs</button>
+    </nav>
+
+    <!-- Main Content Area -->
+    <main class="tab-content-container">
+      
+      <!-- Tab 1: Dashboard -->
+      <section id="tab-dashboard" class="tab-pane active">
+        <div class="metrics-grid">
+          <div class="metric-card card">
+            <div class="metric-header">
+              <span class="metric-title">Service State</span>
+              <span class="badge" id="metric-state-badge">Inactive</span>
+            </div>
+            <div class="metric-value" id="metric-state">Stopped</div>
+            <div class="metric-hint" id="metric-uptime">Uptime: 0s</div>
+          </div>
+
+          <div class="metric-card card">
+            <div class="metric-header">
+              <span class="metric-title">Storefront Regions</span>
+              <span class="badge badge-info">Apple Music</span>
+            </div>
+            <div class="metric-value regions-list" id="metric-regions">None</div>
+            <div class="metric-hint" id="metric-regions-hint">Available after successful boot</div>
+          </div>
+
+          <div class="metric-card card">
+            <div class="metric-header">
+              <span class="metric-title">Active Platform</span>
+              <span class="badge" id="metric-platform-badge">Detecting...</span>
+            </div>
+            <div class="metric-value" id="metric-engine">QEMU Guest</div>
+            <div class="metric-hint" id="metric-engine-detail">Self-contained VM</div>
+          </div>
+
+          <div class="metric-card card">
+            <div class="metric-header">
+              <span class="metric-title">API Latency</span>
+              <span class="badge" id="metric-ping-badge">--</span>
+            </div>
+            <div class="metric-value" id="metric-latency">-- ms</div>
+            <div class="metric-hint">Health check /status</div>
+          </div>
+        </div>
+
+        <!-- Notification Banner if QEMU Package Missing -->
+        <div id="qemu-missing-alert" class="alert-box alert-warning hidden">
+          <div class="alert-icon">⚠️</div>
+          <div class="alert-content">
+            <h4>Prebuilt QEMU Package Not Installed</h4>
+            <p>Non-Linux platforms require the precompiled QEMU all-in-one package to run. You can download and install it automatically with one click.</p>
+          </div>
+          <button class="btn btn-warning btn-sm" onclick="switchToTab('qemu')">Download Package</button>
+        </div>
+
+        <!-- Quick Endpoints Overview -->
+        <div class="card card-section">
+          <h3>Quick Endpoints Reference</h3>
+          <div class="endpoints-table-wrap">
+            <table class="endpoints-table">
+              <thead>
+                <tr>
+                  <th>Method</th>
+                  <th>Endpoint</th>
+                  <th>Description</th>
+                  <th>Action</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td><span class="badge-get">GET</span></td>
+                  <td><code>/status</code></td>
+                  <td>Health check and supported storefront regions</td>
+                  <td><button class="btn btn-xs" onclick="quickTest('/status')">Test</button></td>
+                </tr>
+                <tr>
+                  <td><span class="badge-get">GET</span></td>
+                  <td><code>/m3u8?adamId={id}</code></td>
+                  <td>Fetch song M3U8 playback stream</td>
+                  <td><button class="btn btn-xs" onclick="openTesterWithEndpoint('/m3u8')">Try</button></td>
+                </tr>
+                <tr>
+                  <td><span class="badge-get">GET</span></td>
+                  <td><code>/key?adamId={id}&amp;uri={uri}</code></td>
+                  <td>Fetch track decryption key</td>
+                  <td><button class="btn btn-xs" onclick="openTesterWithEndpoint('/key')">Try</button></td>
+                </tr>
+                <tr>
+                  <td><span class="badge-get">GET</span></td>
+                  <td><code>/lyrics?adamId={id}</code></td>
+                  <td>Fetch lyrics (syllable / line-timed)</td>
+                  <td><button class="btn btn-xs" onclick="openTesterWithEndpoint('/lyrics')">Try</button></td>
+                </tr>
+                <tr>
+                  <td><span class="badge-get">GET</span></td>
+                  <td><code>/webplayback?adamId={id}</code></td>
+                  <td>Fetch web playback tokens</td>
+                  <td><button class="btn btn-xs" onclick="openTesterWithEndpoint('/webplayback')">Try</button></td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+
+      <!-- Tab 2: Settings / Config -->
+      <section id="tab-config" class="tab-pane">
+        <div class="config-grid">
+          <div class="card">
+            <h3>Network &amp; Binding</h3>
+            <div class="form-group">
+              <label for="cfg-host">Host Listen Address</label>
+              <div class="input-with-presets">
+                <input type="text" id="cfg-host" value="127.0.0.1" placeholder="127.0.0.1 or 0.0.0.0">
+                <div class="chip-group">
+                  <button type="button" class="chip" onclick="setHostPreset('127.0.0.1')">Local (127.0.0.1)</button>
+                  <button type="button" class="chip" onclick="setHostPreset('0.0.0.0')">LAN (0.0.0.0)</button>
+                </div>
+              </div>
+              <small class="form-hint">Set to 0.0.0.0 to expose the service to other devices on your local network.</small>
+            </div>
+
+            <div class="form-group">
+              <label for="cfg-host-port">Host Listen Port</label>
+              <input type="number" id="cfg-host-port" value="12340" min="1024" max="65535">
+              <small class="form-hint">The port you connect to on this device (default: 12340).</small>
+            </div>
+
+            <div class="form-group">
+              <label for="cfg-proxy">HTTP / SOCKS5 Proxy (Optional)</label>
+              <input type="text" id="cfg-proxy" placeholder="e.g. http://127.0.0.1:7890 or socks5://127.0.0.1:1080">
+              <small class="form-hint">Forward requests through a proxy for region unlocking.</small>
+            </div>
+          </div>
+
+          <div class="card">
+            <h3>QEMU &amp; Performance</h3>
+            <div class="form-group" id="group-engine-mode">
+              <label for="cfg-engine-mode">Runtime Mode</label>
+              <select id="cfg-engine-mode">
+                <option value="qemu" selected>QEMU Virtual Guest (Recommended for Windows/macOS/Android)</option>
+                <option value="native">Native Rootless (Linux Only)</option>
+              </select>
+              <small class="form-hint">Non-Linux platforms require QEMU mode.</small>
+            </div>
+
+            <div class="form-group">
+              <label for="cfg-memory">Guest RAM (MB)</label>
+              <div class="slider-group">
+                <input type="range" id="cfg-memory" min="256" max="2048" step="64" value="512" oninput="document.getElementById('val-memory').innerText = this.value + ' MB'">
+                <span id="val-memory" class="slider-val">512 MB</span>
+              </div>
+              <small class="form-hint">Allocated RAM for QEMU guest (512MB is optimal).</small>
+            </div>
+
+            <div class="form-group">
+              <label for="cfg-smp">Guest CPU Cores (SMP)</label>
+              <div class="slider-group">
+                <input type="range" id="cfg-smp" min="1" max="8" step="1" value="2" oninput="document.getElementById('val-smp').innerText = this.value + ' Cores'">
+                <span id="val-smp" class="slider-val">2 Cores</span>
+              </div>
+            </div>
+
+            <div class="form-group">
+              <label for="cfg-accel">Hardware Acceleration</label>
+              <select id="cfg-accel">
+                <option value="auto" selected>Auto (Recommended)</option>
+                <option value="whpx">WHPX (Windows Hypervisor Platform)</option>
+                <option value="kvm">KVM (Linux Kernel Virtual Machine)</option>
+                <option value="hvf">HVF (macOS Hypervisor)</option>
+                <option value="tcg">TCG (Software Emulation / Android Fallback)</option>
+              </select>
+              <small class="form-hint">Falls back automatically to TCG software emulation if acceleration fails.</small>
+            </div>
+
+            <div class="form-group">
+              <label for="cfg-log-level">Log Level</label>
+              <select id="cfg-log-level">
+                <option value="info" selected>Info</option>
+                <option value="debug">Debug</option>
+                <option value="warn">Warn</option>
+                <option value="error">Error</option>
+              </select>
+            </div>
+          </div>
+        </div>
+
+        <div class="card card-actions">
+          <button class="btn btn-primary" onclick="saveSettings()">Save Configuration</button>
+          <button class="btn btn-ghost" onclick="resetSettings()">Reset to Defaults</button>
+        </div>
+      </section>
+
+      <!-- Tab 3: Account & Auth -->
+      <section id="tab-account" class="tab-pane">
+        <div class="card max-w-700">
+          <h3>Apple Music Account Authentication</h3>
+          <p class="section-desc">
+            Logging in caches decryption keys and tokens to <code>data.img</code> (or native data dir). Once tokens are cached, wrapper-lite can run in service mode without re-entering passwords.
+          </p>
+
+          <form id="login-form" onsubmit="event.preventDefault(); handleLogin();">
+            <div class="form-group">
+              <label for="auth-username">Apple ID (Email)</label>
+              <input type="text" id="auth-username" placeholder="name@example.com" required autocomplete="username">
+            </div>
+
+            <div class="form-group">
+              <label for="auth-password">Password</label>
+              <input type="password" id="auth-password" placeholder="••••••••" required autocomplete="current-password">
+            </div>
+
+            <div class="form-group">
+              <label for="auth-2fa">2FA Verification Code (Optional)</label>
+              <input type="text" id="auth-2fa" placeholder="6-digit code (if prompted on your device)" maxlength="6" pattern="[0-9]{6}">
+              <small class="form-hint">If your Apple ID has 2-Step Verification enabled, you can enter the 6-digit code directly here or input it when prompted.</small>
+            </div>
+
+            <div class="form-group">
+              <label for="auth-refresh-interval">Token Auto-Refresh Interval (Seconds)</label>
+              <input type="number" id="auth-refresh-interval" value="1800" min="300" max="86400">
+              <small class="form-hint">How often background token refreshing runs (default: 1800s / 30m).</small>
+            </div>
+
+            <div class="form-group">
+              <label for="auth-device-info">Custom Device Info Override (Optional)</label>
+              <input type="text" id="auth-device-info" placeholder="Leave blank to use auto-generated device identity">
+            </div>
+
+            <div class="form-actions">
+              <button type="submit" class="btn btn-primary" id="btn-login-submit">
+                <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2">
+                  <path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4"></path>
+                  <polyline points="10 17 15 12 10 7"></polyline>
+                  <line x1="15" y1="12" x2="3" y2="12"></line>
+                </svg>
+                <span>Login &amp; Cache Tokens</span>
+              </button>
+            </div>
+          </form>
+
+          <div id="login-progress-box" class="login-progress hidden">
+            <div class="spinner"></div>
+            <span id="login-progress-msg">Logging in to Apple Music services...</span>
+          </div>
+        </div>
+      </section>
+
+      <!-- Tab 4: QEMU Package Manager -->
+      <section id="tab-qemu" class="tab-pane">
+        <div class="card max-w-800">
+          <div class="section-title-row">
+            <div>
+              <h3>Precompiled QEMU All-in-One Package</h3>
+              <p class="section-desc">
+                The QEMU all-in-one package includes QEMU system binaries, kernel (<code>vmlinuz-lite-qemu</code>), rootfs/initramfs (<code>lite-initramfs.cpio.gz</code>), and preconfigured data disk (<code>data.img</code>).
+              </p>
+            </div>
+            <button class="btn btn-secondary btn-sm" onclick="checkQemuPackageStatus()">Check Status</button>
+          </div>
+
+          <!-- Files Checklist -->
+          <div class="qemu-files-list">
+            <div class="qemu-file-item" id="chk-launcher">
+              <span class="file-icon" id="icon-launcher">⏳</span>
+              <div class="file-info">
+                <span class="file-name">Launcher (wrapper-lite-qemu)</span>
+                <span class="file-detail" id="detail-launcher">Checking...</span>
+              </div>
+            </div>
+
+            <div class="qemu-file-item" id="chk-kernel">
+              <span class="file-icon" id="icon-kernel">⏳</span>
+              <div class="file-info">
+                <span class="file-name">Kernel (vmlinuz-lite-qemu)</span>
+                <span class="file-detail" id="detail-kernel">Checking...</span>
+              </div>
+            </div>
+
+            <div class="qemu-file-item" id="chk-initramfs">
+              <span class="file-icon" id="icon-initramfs">⏳</span>
+              <div class="file-info">
+                <span class="file-name">Initramfs (lite-initramfs.cpio.gz)</span>
+                <span class="file-detail" id="detail-initramfs">Checking...</span>
+              </div>
+            </div>
+
+            <div class="qemu-file-item" id="chk-disk">
+              <span class="file-icon" id="icon-disk">⏳</span>
+              <div class="file-info">
+                <span class="file-name">Data Disk (data.img)</span>
+                <span class="file-detail" id="detail-disk">Checking...</span>
+              </div>
+            </div>
+
+            <div class="qemu-file-item" id="chk-qemubin">
+              <span class="file-icon" id="icon-qemubin">⏳</span>
+              <div class="file-info">
+                <span class="file-name">QEMU Binary &amp; Firmware (qemu/bin)</span>
+                <span class="file-detail" id="detail-qemubin">Checking...</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- Download / Update Card -->
+          <div class="download-box card">
+            <div class="download-info">
+              <h4>Direct Download from CI Nightly Builds</h4>
+              <p>Download the official prebuilt release archive for <strong id="detected-os-label">your platform</strong> directly from the nightly builds repository.</p>
+              <div class="source-link">
+                Source: <a href="https://nightly.link/WorldObservationLog/wrapper/workflows/build-lite/lite?preview" target="_blank" rel="noopener">nightly.link/WorldObservationLog/wrapper</a>
+              </div>
+            </div>
+            
+            <div class="download-actions">
+              <button class="btn btn-primary" id="btn-download-qemu" onclick="startDownloadQemuPackage()">
+                <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2">
+                  <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                  <polyline points="7 10 12 15 17 10"></polyline>
+                  <line x1="12" y1="15" x2="12" y2="3"></line>
+                </svg>
+                <span>Download / Update QEMU Package</span>
+              </button>
+            </div>
+          </div>
+
+          <!-- Download Progress Bar (shown during download) -->
+          <div id="qemu-download-progress-card" class="card hidden">
+            <div class="progress-header">
+              <span id="qemu-download-status-text">Downloading package...</span>
+              <span id="qemu-download-pct">0%</span>
+            </div>
+            <div class="progress-bar-bg">
+              <div id="qemu-download-progress-bar" class="progress-bar-fill" style="width: 0%;"></div>
+            </div>
+            <div class="progress-sub">
+              <span id="qemu-download-bytes">0 MB / 0 MB</span>
+              <span id="qemu-download-speed">-- KB/s</span>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Tab 5: API Tester -->
+      <section id="tab-tester" class="tab-pane">
+        <div class="card max-w-800">
+          <h3>API Test Bench</h3>
+          <p class="section-desc">Quickly test Apple Music decryption and metadata endpoints against the running wrapper instance.</p>
+
+          <div class="tester-controls">
+            <div class="form-group">
+              <label for="test-endpoint-select">Endpoint</label>
+              <select id="test-endpoint-select" onchange="handleTesterEndpointChange()">
+                <option value="/status">GET /status (Health &amp; Storefronts)</option>
+                <option value="/m3u8">GET /m3u8 (HLS Playback Stream)</option>
+                <option value="/lyrics">GET /lyrics (Time-synced Lyrics)</option>
+                <option value="/key">GET /key (Track Key)</option>
+                <option value="/webplayback">GET /webplayback (Web Playback)</option>
+              </select>
+            </div>
+
+            <div class="form-group" id="test-adamid-group">
+              <label for="test-adamid">Adam ID (Song / Track ID)</label>
+              <div class="input-with-presets">
+                <input type="text" id="test-adamid" value="1440784263" placeholder="e.g. 1440784263">
+                <div class="chip-group">
+                  <button type="button" class="chip" onclick="document.getElementById('test-adamid').value='1440784263'">Bad Guy (1440784263)</button>
+                  <button type="button" class="chip" onclick="document.getElementById('test-adamid').value='1544494413'">Stay (1544494413)</button>
+                </div>
+              </div>
+            </div>
+
+            <div class="form-group hidden" id="test-uri-group">
+              <label for="test-uri">Key URI</label>
+              <input type="text" id="test-uri" placeholder="skd://itunes.apple.com/...">
+            </div>
+
+            <button class="btn btn-primary" onclick="executeApiTest()">
+              <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2">
+                <polygon points="5 3 19 12 5 21 5 3"></polygon>
+              </svg>
+              <span>Send Request</span>
+            </button>
+          </div>
+
+          <!-- Response output -->
+          <div class="test-response-wrap">
+            <div class="test-response-header">
+              <span>Response: <strong id="test-response-status">--</strong></span>
+              <button class="icon-btn-small" onclick="copyTestResponse()" title="Copy Response">
+                <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2">
+                  <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
+                  <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
+                </svg>
+              </button>
+            </div>
+            <pre id="test-response-body"><code>Click "Send Request" to test endpoint...</code></pre>
+          </div>
+        </div>
+      </section>
+
+      <!-- Tab 6: Live Logs -->
+      <section id="tab-logs" class="tab-pane">
+        <div class="card full-height">
+          <div class="logs-toolbar">
+            <div class="logs-toolbar-left">
+              <h3>Live Console Output</h3>
+              <span class="badge" id="logs-count-badge">0 lines</span>
+            </div>
+            <div class="logs-toolbar-right">
+              <label class="checkbox-label">
+                <input type="checkbox" id="chk-autoscroll" checked>
+                <span>Auto-scroll</span>
+              </label>
+              <button class="btn btn-xs btn-ghost" onclick="clearLogs()">Clear</button>
+              <button class="btn btn-xs btn-ghost" onclick="copyAllLogs()">Copy All</button>
+            </div>
+          </div>
+          <div id="logs-terminal" class="terminal-view">
+            <div class="log-line log-system">[gui] wrapper-lite GUI initialized.</div>
+          </div>
+        </div>
+      </section>
+
+    </main>
+
+    <!-- 2FA Prompt Modal -->
+    <div id="modal-2fa" class="modal-overlay hidden">
+      <div class="modal-dialog">
+        <div class="modal-header">
+          <h3>Two-Factor Authentication</h3>
+          <button class="modal-close" onclick="close2faModal()">&times;</button>
+        </div>
+        <div class="modal-body">
+          <p>Apple Music requires a 6-digit 2FA verification code sent to your Apple trusted devices.</p>
+          <div class="form-group">
+            <label for="modal-2fa-input">Enter 6-digit Code:</label>
+            <input type="text" id="modal-2fa-input" class="text-center font-code text-lg" maxlength="6" placeholder="123456" autofocus>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button class="btn btn-ghost" onclick="close2faModal()">Cancel</button>
+          <button class="btn btn-primary" onclick="submit2faCode()">Submit Code</button>
+        </div>
+      </div>
+    </div>
+
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>

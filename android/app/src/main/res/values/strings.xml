@@ -1,0 +1,7 @@
+<resources>
+    <string name="app_name">wrapper-lite</string>
+    <string name="notification_channel_name">wrapper-lite Service</string>
+    <string name="notification_channel_desc">Shows status of the running QEMU guest</string>
+    <string name="service_running">wrapper-lite service is active on port 12340</string>
+    <string name="action_stop">Stop</string>
+</resources>
