@@ -34,9 +34,11 @@ class MainActivity : AppCompatActivity() {
 
             // Attach listeners
             qemuService?.onLogListener = { line ->
-                runOnUiThread {
-                    val safeLine = line.replace("\\", "\\\\").replace("'", "\\'").replace("\n", " ")
-                    webView.evaluateJavascript("window.onAndroidLogEntry('$safeLine')", null)
+                if (!line.contains("request: GET /status")) {
+                    runOnUiThread {
+                        val safeLine = line.replace("\\", "\\\\").replace("'", "\\'").replace("\n", " ")
+                        webView.evaluateJavascript("window.onAndroidLogEntry('$safeLine')", null)
+                    }
                 }
             }
 
@@ -85,6 +87,12 @@ class MainActivity : AppCompatActivity() {
         settings.javaScriptEnabled = true
         settings.domStorageEnabled = true
         settings.allowFileAccess = true
+        settings.allowContentAccess = true
+        settings.allowFileAccessFromFileURLs = true
+        settings.allowUniversalAccessFromFileURLs = true
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+            settings.mixedContentMode = WebSettings.MIXED_CONTENT_ALWAYS_ALLOW
+        }
         settings.loadWithOverviewMode = true
         settings.useWideViewPort = true
         settings.cacheMode = WebSettings.LOAD_DEFAULT

@@ -883,32 +883,14 @@ async function checkServiceHealth() {
   const pingTarget = host === '0.0.0.0' ? '127.0.0.1' : host;
   const startPing = Date.now();
 
-  try {
-    const res = await fetch(`http://${pingTarget}:${port}/status`, { signal: AbortSignal.timeout(2000) });
-    const latency = Date.now() - startPing;
-    if (res.ok) {
-      const data = await res.json();
-      const regions = data.data && data.data.regions ? data.data.regions : [];
-      setRunningUI(regions);
-      document.getElementById('metric-latency').innerText = `${latency} ms`;
-      const pingBadge = document.getElementById('metric-ping-badge');
-      pingBadge.innerText = latency < 100 ? t('badge_good') : t('badge_normal');
-      pingBadge.className = 'badge badge-info';
-      return;
-    }
-  } catch (err) {
-    // Direct fetch failed (e.g. CORS restrictions on older images or port not answering yet)
-  }
-
-  // Fallback to GUI backend service status probe (bypasses browser CORS completely)
-  if (!isAndroidApp && backendRunning) {
+  // On Android native app, invoke the native bridge probe (completely bypasses WebView file:// & CORS limitations)
+  if (isAndroidApp && window.Android && window.Android.getServiceStatus) {
     try {
-      const startProxy = Date.now();
-      const res = await fetch('/api/service/status', { signal: AbortSignal.timeout(2500) });
-      if (res.ok) {
-        const data = await res.json();
+      const statusJson = window.Android.getServiceStatus(pingTarget, parseInt(port, 10));
+      if (statusJson) {
+        const data = JSON.parse(statusJson);
         if (data.online) {
-          const latency = data.latency || (Date.now() - startProxy);
+          const latency = data.latency || 1;
           const regions = data.data && data.data.regions ? data.data.regions : [];
           setRunningUI(regions);
           document.getElementById('metric-latency').innerText = `${latency} ms`;
@@ -919,6 +901,47 @@ async function checkServiceHealth() {
         }
       }
     } catch (e) {}
+  }
+
+  // Try direct fetch (for desktop or when browser allows direct access)
+  if (!isAndroidApp) {
+    try {
+      const res = await fetch(`http://${pingTarget}:${port}/status`, { signal: AbortSignal.timeout(2000) });
+      const latency = Date.now() - startPing;
+      if (res.ok) {
+        const data = await res.json();
+        const regions = data.data && data.data.regions ? data.data.regions : [];
+        setRunningUI(regions);
+        document.getElementById('metric-latency').innerText = `${latency} ms`;
+        const pingBadge = document.getElementById('metric-ping-badge');
+        pingBadge.innerText = latency < 100 ? t('badge_good') : t('badge_normal');
+        pingBadge.className = 'badge badge-info';
+        return;
+      }
+    } catch (err) {
+      // Direct fetch failed (e.g. CORS restrictions on older images or port not answering yet)
+    }
+
+    // Fallback to GUI backend service status probe (bypasses browser CORS completely)
+    if (backendRunning) {
+      try {
+        const startProxy = Date.now();
+        const res = await fetch('/api/service/status', { signal: AbortSignal.timeout(2500) });
+        if (res.ok) {
+          const data = await res.json();
+          if (data.online) {
+            const latency = data.latency || (Date.now() - startProxy);
+            const regions = data.data && data.data.regions ? data.data.regions : [];
+            setRunningUI(regions);
+            document.getElementById('metric-latency').innerText = `${latency} ms`;
+            const pingBadge = document.getElementById('metric-ping-badge');
+            pingBadge.innerText = latency < 100 ? t('badge_good') : t('badge_normal');
+            pingBadge.className = 'badge badge-info';
+            return;
+          }
+        }
+      } catch (e) {}
+    }
   }
 
   // Port not answering yet (guest still booting)
@@ -1191,27 +1214,44 @@ async function executeApiTest() {
 
   try {
     const start = Date.now();
-    let res;
-    try {
-      res = await fetch(url);
-    } catch (directErr) {
-      if (!isAndroidApp) {
-        // Fallback through backend proxy if direct fetch fails (e.g. CORS)
-        const proxyUrl = `/api/proxy?endpoint=${encodeURIComponent(ep + query)}`;
-        res = await fetch(proxyUrl);
-      } else {
-        throw directErr;
-      }
-    }
-    const latency = Date.now() - start;
-    statusEl.innerText = `${res.status} ${res.statusText} (${latency}ms)`;
+    let resText = '';
+    let resStatus = 200;
+    let resStatusText = 'OK';
+    let latency = 0;
 
-    const text = await res.text();
+    if (isAndroidApp && window.Android && window.Android.proxyRequest) {
+      const respStr = window.Android.proxyRequest(url, 'GET', '');
+      latency = Date.now() - start;
+      const respObj = JSON.parse(respStr);
+      resStatus = respObj.status;
+      resStatusText = respObj.statusText;
+      resText = respObj.body;
+    } else {
+      let res;
+      try {
+        res = await fetch(url);
+      } catch (directErr) {
+        if (!isAndroidApp) {
+          // Fallback through backend proxy if direct fetch fails (e.g. CORS)
+          const proxyUrl = `/api/proxy?endpoint=${encodeURIComponent(ep + query)}`;
+          res = await fetch(proxyUrl);
+        } else {
+          throw directErr;
+        }
+      }
+      latency = Date.now() - start;
+      resStatus = res.status;
+      resStatusText = res.statusText;
+      resText = await res.text();
+    }
+
+    statusEl.innerText = `${resStatus} ${resStatusText} (${latency}ms)`;
+
     try {
-      const obj = JSON.parse(text);
+      const obj = JSON.parse(resText);
       bodyEl.innerHTML = `<code>${escapeHtml(JSON.stringify(obj, null, 2))}</code>`;
     } catch (e) {
-      bodyEl.innerHTML = `<code>${escapeHtml(text)}</code>`;
+      bodyEl.innerHTML = `<code>${escapeHtml(resText)}</code>`;
     }
   } catch (err) {
     statusEl.innerText = t('status_failed');
@@ -1310,7 +1350,11 @@ window.onAndroidStatusUpdate = (statusJson) => {
   try {
     const data = JSON.parse(statusJson);
     if (data.running) {
-      setRunningUI(data.regions);
+      if (data.regions && data.regions.length > 0) {
+        setRunningUI(data.regions);
+      } else {
+        checkServiceHealth();
+      }
     } else {
       setStoppedUI();
     }

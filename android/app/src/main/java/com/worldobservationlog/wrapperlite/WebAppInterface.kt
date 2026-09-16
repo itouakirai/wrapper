@@ -8,6 +8,8 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import org.json.JSONObject
+import java.net.HttpURLConnection
+import java.net.URL
 
 class WebAppInterface(
     private val context: Context,
@@ -113,6 +115,83 @@ class WebAppInterface(
     @JavascriptInterface
     fun loadConfig(): String {
         return prefs.getString("config", "{}") ?: "{}"
+    }
+
+    @JavascriptInterface
+    fun getServiceStatus(host: String, port: Int): String {
+        val targetHost = if (host.isBlank() || host == "0.0.0.0") "127.0.0.1" else host
+        val urlStr = "http://$targetHost:$port/status"
+        val startTime = System.currentTimeMillis()
+        var conn: HttpURLConnection? = null
+        return try {
+            val url = URL(urlStr)
+            conn = (url.openConnection() as HttpURLConnection).apply {
+                connectTimeout = 2000
+                readTimeout = 2000
+                requestMethod = "GET"
+                instanceFollowRedirects = false
+            }
+            val code = conn.responseCode
+            val latency = System.currentTimeMillis() - startTime
+            if (code == 200) {
+                val body = conn.inputStream.bufferedReader().use { it.readText() }
+                val json = JSONObject(body)
+                json.put("online", true)
+                json.put("latency", latency)
+                json.toString()
+            } else {
+                JSONObject().apply {
+                    put("online", false)
+                    put("latency", latency)
+                    put("status", code)
+                }.toString()
+            }
+        } catch (e: Exception) {
+            val latency = System.currentTimeMillis() - startTime
+            JSONObject().apply {
+                put("online", false)
+                put("latency", latency)
+                put("message", e.message ?: "Connection failed")
+            }.toString()
+        } finally {
+            conn?.disconnect()
+        }
+    }
+
+    @JavascriptInterface
+    fun proxyRequest(targetUrl: String, method: String, postBody: String?): String {
+        var conn: HttpURLConnection? = null
+        return try {
+            val url = URL(targetUrl)
+            conn = (url.openConnection() as HttpURLConnection).apply {
+                connectTimeout = 10000
+                readTimeout = 30000
+                requestMethod = method.uppercase()
+                if (method.equals("POST", ignoreCase = true) && !postBody.isNullOrEmpty()) {
+                    doOutput = true
+                    setRequestProperty("Content-Type", "application/json")
+                    outputStream.use { os ->
+                        os.write(postBody.toByteArray(Charsets.UTF_8))
+                    }
+                }
+            }
+            val code = conn.responseCode
+            val stream = if (code in 200..299) conn.inputStream else conn.errorStream
+            val body = stream?.bufferedReader()?.use { it.readText() } ?: ""
+            JSONObject().apply {
+                put("status", code)
+                put("statusText", conn.responseMessage ?: "OK")
+                put("body", body)
+            }.toString()
+        } catch (e: Exception) {
+            JSONObject().apply {
+                put("status", 502)
+                put("statusText", "Bad Gateway")
+                put("body", "Proxy Error: ${e.message}")
+            }.toString()
+        } finally {
+            conn?.disconnect()
+        }
     }
 
     @JavascriptInterface

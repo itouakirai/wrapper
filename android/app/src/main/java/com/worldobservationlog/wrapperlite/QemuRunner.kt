@@ -109,7 +109,11 @@ class QemuRunner(private val context: Context, private val assetManager: QemuAss
                 val reader = BufferedReader(InputStreamReader(proc.inputStream))
                 var line: String?
                 while (reader.readLine().also { line = it } != null) {
-                    line?.let { onLog(it) }
+                    line?.let {
+                        if (!it.contains("request: GET /status")) {
+                            onLog(it)
+                        }
+                    }
                 }
             }.start()
 
@@ -117,7 +121,11 @@ class QemuRunner(private val context: Context, private val assetManager: QemuAss
                 val errReader = BufferedReader(InputStreamReader(proc.errorStream))
                 var line: String?
                 while (errReader.readLine().also { line = it } != null) {
-                    line?.let { onLog(it) }
+                    line?.let {
+                        if (!it.contains("request: GET /status")) {
+                            onLog(it)
+                        }
+                    }
                 }
             }.start()
 
