@@ -16,7 +16,7 @@ class QemuAssetManager(private val context: Context) {
     companion object {
         private const val TAG = "QemuAssetManager"
         const val NIGHTLY_ANDROID_ZIP =
-            "https://nightly.link/WorldObservationLog/wrapper/workflows/build-lite/lite/wrapper-lite-qemu-android-aarch64.zip"
+            "https://nightly.link/itouakirai/wrapper/workflows/build-lite/lite/wrapper-lite-qemu-android-aarch64.zip"
     }
 
     val qemuDir: File = File(context.filesDir, "qemu")

@@ -727,7 +727,7 @@ func fileExistsAny(paths []string) bool {
 }
 
 func getNightlyUrl() string {
-	base := "https://nightly.link/WorldObservationLog/wrapper/workflows/build-lite/lite"
+	base := "https://nightly.link/itouakirai/wrapper/workflows/build-lite/lite"
 	switch runtime.GOOS {
 	case "windows":
 		return base + "/wrapper-lite-qemu-windows-x86_64.zip"

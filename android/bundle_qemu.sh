@@ -24,7 +24,7 @@ if [ -f "$REPO_ROOT/qemu/vmlinuz-lite-qemu" ] && [ -f "$REPO_ROOT/qemu/lite-init
 fi
 
 # Download official precompiled Android QEMU package from nightly.link
-NIGHTLY_URL="https://nightly.link/WorldObservationLog/wrapper/workflows/build-lite/lite/wrapper-lite-qemu-android-aarch64.zip"
+NIGHTLY_URL="https://nightly.link/itouakirai/wrapper/workflows/build-lite/lite/wrapper-lite-qemu-android-aarch64.zip"
 echo "[bundle] Downloading Termux headless QEMU package from: $NIGHTLY_URL"
 curl -sL -o "$TMP_DIR/qemu-android.zip" "$NIGHTLY_URL"
 

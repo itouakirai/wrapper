@@ -13,7 +13,7 @@ It provides five endpoints on one HTTP port: M3U8, Key, Lyrics, License, and Web
 
 A modern, responsive cross-platform GUI is available for **Windows**, **macOS**, **Linux**, and **Android**.
 
-- **Non-Linux systems (Windows, macOS)**: directly leverage precompiled QEMU packages or download them with one click from [nightly.link](https://nightly.link/WorldObservationLog/wrapper/workflows/build-lite/lite?preview).
+- **Non-Linux systems (Windows, macOS)**: directly leverage precompiled QEMU packages or download them with one click from [nightly.link](https://nightly.link/itouakirai/wrapper/workflows/build-lite/lite?preview).
 - **Android**: native Android app with embedded `qemu-system-x86-64-headless` (Termux build) running QEMU in a Foreground Service with WakeLock.
 - **Linux**: supports both native rootless execution and QEMU virtualized guest mode.
 

@@ -3,7 +3,7 @@ setlocal enabledelayedexpansion
 
 set SCRIPT_DIR=%~dp0
 set APP_ASSETS_DIR=%SCRIPT_DIR%app\src\main\assets\qemu
-set NIGHTLY_URL=https://nightly.link/WorldObservationLog/wrapper/workflows/build-lite/lite/wrapper-lite-qemu-android-aarch64.zip
+set NIGHTLY_URL=https://nightly.link/itouakirai/wrapper/workflows/build-lite/lite/wrapper-lite-qemu-android-aarch64.zip
 set TMP_ZIP=%TEMP%\qemu-android.zip
 set TMP_EXTRACT=%TEMP%\qemu-android-unpacked
 

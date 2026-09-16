@@ -1,4 +1,4 @@
-﻿# wrapper-lite Cross-Platform GUI
+# wrapper-lite Cross-Platform GUI
 
 A modern, lightweight, responsive cross-platform GUI for wrapper-lite, supporting **Windows**, **macOS**, **Linux**, and **Android**.
 
@@ -21,7 +21,7 @@ ightly.link.
 ## Precompiled QEMU Packages
 
 The GUI directly utilizes the prebuilt QEMU packages compiled in CI:
-- **Nightly link overview**: [nightly.link/WorldObservationLog/wrapper](https://nightly.link/WorldObservationLog/wrapper/workflows/build-lite/lite?preview)
+- **Nightly link overview**: [nightly.link/itouakirai/wrapper](https://nightly.link/itouakirai/wrapper/workflows/build-lite/lite?preview)
 - **Windows (x86_64)**: wrapper-lite-qemu-windows-x86_64.zip
 - **macOS (Apple Silicon / aarch64)**: wrapper-lite-qemu-macos-aarch64.zip
 - **Linux (x86_64)**: wrapper-lite-qemu-linux-x86_64.zip
