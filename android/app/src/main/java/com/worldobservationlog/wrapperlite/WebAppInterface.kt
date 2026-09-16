@@ -28,6 +28,21 @@ class WebAppInterface(
     }
 
     @JavascriptInterface
+    fun hasLoginCache(): Boolean {
+        val qemuDir = java.io.File(context.filesDir, "qemu")
+        if (java.io.File(context.filesDir, ".login_cached").exists() || java.io.File(qemuDir, ".login_cached").exists()) {
+            return true
+        }
+        val tokenFiles = listOf(
+            java.io.File(context.filesDir, "token_cache.json"),
+            java.io.File(context.filesDir, "DEV_TOKEN"),
+            java.io.File(context.filesDir, "MUSIC_TOKEN"),
+            java.io.File(qemuDir, "token_cache.json")
+        )
+        return tokenFiles.any { it.exists() }
+    }
+
+    @JavascriptInterface
     fun startService(configJson: String) {
         val s = serviceProvider() ?: return
         try {

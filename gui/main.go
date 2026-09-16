@@ -34,6 +34,7 @@ type AppState struct {
 	mu            sync.RWMutex
 	cmd           *exec.Cmd
 	isRunning     bool
+	isStopping    bool
 	startTime     time.Time
 	config        Config
 	logBuffer     []string
@@ -145,6 +146,14 @@ func main() {
 	fmt.Printf("  OS: %s | Arch: %s\n", runtime.GOOS, runtime.GOARCH)
 	fmt.Printf("====================================================\n")
 
+	// Verify QEMU package status on startup once
+	qemuRes := state.checkQemuFiles()
+	if qemuRes.AllPresent {
+		state.appendLog("[pkg] QEMU package status: all components verified and ready.")
+	} else {
+		state.appendLog("[pkg] QEMU package status: components missing or incomplete (check 'QEMU Package' tab).")
+	}
+
 	// Open browser unless disabled
 	if !*noBrowser {
 		go func() {
@@ -171,10 +180,11 @@ func main() {
 func handleInfo(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]interface{}{
-		"os":         runtime.GOOS,
-		"arch":       runtime.GOARCH,
-		"nightlyUrl": getNightlyUrl(),
-		"appDir":     state.appDir,
+		"os":            runtime.GOOS,
+		"arch":          runtime.GOARCH,
+		"nightlyUrl":    getNightlyUrl(),
+		"appDir":        state.appDir,
+		"hasLoginCache": state.hasLoginCache(),
 	})
 }
 
@@ -189,11 +199,12 @@ func handleStatus(w http.ResponseWriter, r *http.Request) {
 	}
 
 	json.NewEncoder(w).Encode(map[string]interface{}{
-		"running": state.isRunning,
-		"uptime":  uptime,
-		"host":    state.config.Host,
-		"port":    state.config.Port,
-		"engine":  state.config.Engine,
+		"running":       state.isRunning,
+		"uptime":        uptime,
+		"host":          state.config.Host,
+		"port":          state.config.Port,
+		"engine":        state.config.Engine,
+		"hasLoginCache": state.hasLoginCache(),
 	})
 }
 
@@ -496,8 +507,9 @@ func (s *AppState) startService(cfg Config) error {
 	var bin string
 	var args []string
 
-	// Non-Linux or when engine=qemu is selected
-	if cfg.Engine == "qemu" || runtime.GOOS != "linux" {
+	// Non-Linux x86_64 or when engine=qemu is selected
+	isLinuxX86_64 := (runtime.GOOS == "linux" && (runtime.GOARCH == "amd64" || runtime.GOARCH == "x86_64"))
+	if cfg.Engine == "qemu" || !isLinuxX86_64 {
 		bin = s.findLauncher("wrapper-lite-qemu")
 		if bin == "" {
 			return fmt.Errorf("wrapper-lite-qemu not found. Please download the QEMU package from the 'QEMU Package' tab")
@@ -526,7 +538,7 @@ func (s *AppState) startService(cfg Config) error {
 			args = append(args, "--token-refresh-interval", cfg.RefreshInterval)
 		}
 	} else {
-		// Native mode on Linux
+		// Native mode on Linux x86_64
 		bin = s.findLauncher("wrapper-lite-rootless")
 		if bin == "" {
 			bin = s.findLauncher("wrapper-lite")
@@ -568,9 +580,14 @@ func (s *AppState) startService(cfg Config) error {
 		return fmt.Errorf("failed to start process %s: %w", bin, err)
 	}
 
+	if !s.hasLoginCache() {
+		s.appendLog("[warn] Starting service without login cache! Decryption tokens are missing; please login via 'Account & Auth'.")
+	}
+
 	s.mu.Lock()
 	s.cmd = cmd
 	s.isRunning = true
+	s.isStopping = false
 	s.startTime = time.Now()
 	s.mu.Unlock()
 
@@ -583,10 +600,12 @@ func (s *AppState) startService(cfg Config) error {
 	go func() {
 		err := cmd.Wait()
 		s.mu.Lock()
+		wasStopping := s.isStopping
 		s.isRunning = false
 		s.cmd = nil
+		s.isStopping = false
 		s.mu.Unlock()
-		if err != nil {
+		if err != nil && !wasStopping {
 			s.appendLog(fmt.Sprintf("[run] Process exited with error: %v", err))
 		} else {
 			s.appendLog("[run] Process exited normally.")
@@ -598,23 +617,24 @@ func (s *AppState) startService(cfg Config) error {
 
 func (s *AppState) stopService() {
 	s.mu.Lock()
-	defer s.mu.Unlock()
-
 	if !s.isRunning || s.cmd == nil || s.cmd.Process == nil {
+		s.mu.Unlock()
 		return
 	}
 
-	s.appendLog(fmt.Sprintf("[run] Terminating process (PID %d)...", s.cmd.Process.Pid))
-	killProcessTree(s.cmd)
+	s.isStopping = true
+	cmd := s.cmd
+	s.mu.Unlock()
 
-	s.isRunning = false
-	s.cmd = nil
+	s.appendLog(fmt.Sprintf("[run] Terminating process (PID %d)...", cmd.Process.Pid))
+	killProcessTree(cmd)
 }
 
 func (s *AppState) performLogin(req LoginRequest) (map[string]interface{}, error) {
 	bin := s.findLauncher("wrapper-lite-qemu")
 	isQemu := true
-	if bin == "" && runtime.GOOS == "linux" {
+	isLinuxX86_64 := (runtime.GOOS == "linux" && (runtime.GOARCH == "amd64" || runtime.GOARCH == "x86_64"))
+	if bin == "" && isLinuxX86_64 {
 		bin = s.findLauncher("wrapper-lite-rootless")
 		if bin == "" {
 			bin = s.findLauncher("wrapper-lite")
@@ -695,6 +715,7 @@ func (s *AppState) performLogin(req LoginRequest) (map[string]interface{}, error
 		}, nil
 	}
 
+	_ = os.WriteFile(filepath.Join(s.appDir, ".login_cached"), []byte(time.Now().Format(time.RFC3339)), 0644)
 	return map[string]interface{}{
 		"success": true,
 		"message": "Login succeeded! Tokens cached.",
@@ -840,6 +861,85 @@ func (s *AppState) checkQemuFiles() QemuCheckResult {
 		QemuBin:    qemuBin,
 		AllPresent: launcher && kernel && initramfs && disk && qemuBin,
 	}
+}
+
+func (s *AppState) hasLoginCache() bool {
+	// 1. Check marker file
+	if fileExistsAny([]string{
+		filepath.Join(s.appDir, ".login_cached"),
+		filepath.Join(s.qemuDir, ".login_cached"),
+		filepath.Join(".", ".login_cached"),
+	}) {
+		return true
+	}
+
+	// 2. Check native rootfs token cache files
+	nativeFiles := []string{
+		filepath.Join(s.appDir, "rootfs", "data", "token_cache.json"),
+		filepath.Join(s.appDir, "rootfs", "data", "DEV_TOKEN"),
+		filepath.Join(s.appDir, "rootfs", "data", "MUSIC_TOKEN"),
+		filepath.Join(s.appDir, "rootfs", "data", "STOREFRONT_ID"),
+		filepath.Join(s.appDir, "rootfs", "data", "mpl_db", "kvs.sqlitedb"),
+		filepath.Join(".", "rootfs", "data", "token_cache.json"),
+	}
+	if fileExistsAny(nativeFiles) {
+		return true
+	}
+
+	// 3. Check data.img for tokens/database signatures
+	diskCandidates := []string{
+		filepath.Join(s.qemuDir, "data.img"),
+		filepath.Join(".", "qemu", "data.img"),
+	}
+	for _, p := range diskCandidates {
+		if hasTokensInDiskImage(p) {
+			return true
+		}
+	}
+	return false
+}
+
+func hasTokensInDiskImage(path string) bool {
+	f, err := os.Open(path)
+	if err != nil {
+		return false
+	}
+	defer f.Close()
+
+	buf := make([]byte, 1024*1024) // 1MB chunks
+	signatures := [][]byte{
+		[]byte("token_cache.json"),
+		[]byte("MUSIC_TOKEN"),
+		[]byte("kvs.sqlitedb"),
+	}
+
+	var overlap []byte
+	// Scan up to 64MB (entire standard data.img partition)
+	for i := 0; i < 64; i++ {
+		n, err := f.Read(buf)
+		if n <= 0 || err != nil {
+			break
+		}
+		var chunk []byte
+		if len(overlap) > 0 {
+			chunk = make([]byte, len(overlap)+n)
+			copy(chunk, overlap)
+			copy(chunk[len(overlap):], buf[:n])
+		} else {
+			chunk = buf[:n]
+		}
+		for _, sig := range signatures {
+			if bytes.Contains(chunk, sig) {
+				return true
+			}
+		}
+		if n >= 64 {
+			overlap = append([]byte(nil), buf[n-64:n]...)
+		} else {
+			overlap = nil
+		}
+	}
+	return false
 }
 
 func fileExistsAny(paths []string) bool {

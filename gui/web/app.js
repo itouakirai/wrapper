@@ -14,6 +14,7 @@ let logsCount = 0;
 let currentLang = 'en';
 let currentRegions = [];
 let lastQemuData = null;
+let hasCachedLogin = null;
 let platformInfo = {
   os: 'unknown',
   arch: 'unknown',
@@ -97,8 +98,8 @@ const translations = {
     title_qemu_perf: "QEMU & Performance",
     lbl_runtime_mode: "Runtime Mode",
     opt_engine_qemu: "QEMU Virtual Guest (Recommended for Windows/macOS/Android)",
-    opt_engine_native: "Native Rootless (Linux Only)",
-    hint_engine_mode: "Non-Linux platforms require QEMU mode.",
+    opt_engine_native: "Native Rootless (Linux x86_64 Only)",
+    hint_engine_mode: "Non-Linux x86_64 platforms require QEMU mode.",
     lbl_guest_ram: "Guest RAM (MB)",
     hint_guest_ram: "Allocated RAM for QEMU guest (512MB is optimal).",
     lbl_guest_cpu: "Guest CPU Cores (SMP)",
@@ -117,6 +118,7 @@ const translations = {
     lbl_apple_id: "Apple ID (Email)",
     ph_apple_id: "name@example.com",
     lbl_password: "Password",
+    btn_toggle_password: "Show/Hide Password",
     lbl_2fa: "2FA Verification Code (Optional)",
     ph_2fa: "6-digit code (if prompted on your device)",
     hint_2fa: "If your Apple ID has 2-Step Verification enabled, you can enter the 6-digit code directly here or input it when prompted.",
@@ -137,6 +139,9 @@ const translations = {
     status_checking: "Checking...",
     status_present_verified: "Present and verified",
     status_missing_required: "Missing - required for QEMU mode",
+    badge_qemu_ready: "All Components Ready",
+    badge_qemu_incomplete: "Incomplete / Missing Files",
+    badge_checking: "Checking...",
     title_ci_download: "Direct Download from CI Nightly Builds",
     desc_ci_download_pre: "Download the official prebuilt release archive for ",
     desc_ci_download_post: " directly from the nightly builds repository.",
@@ -179,6 +184,8 @@ const translations = {
     log_cfg_saved: "[gui] Configuration saved successfully.",
     confirm_reset_settings: "Reset settings to default?",
     alert_copied: "Copied: %s",
+    confirm_start_without_login: "No Apple Music login cache detected. wrapper-lite requires cached login credentials to decrypt audio streams. Do you want to start the service anyway?",
+    hint_regions_no_login: "No login cache - login via Account & Auth",
     log_service_starting: "[gui] Launching wrapper-lite service...",
     log_service_start_failed: "[error] Failed to start service: %s",
     alert_start_failed: "Start failed: %s",
@@ -268,8 +275,8 @@ const translations = {
     title_qemu_perf: "QEMU 与性能设置",
     lbl_runtime_mode: "运行模式",
     opt_engine_qemu: "QEMU 虚拟客机（推荐 Windows/macOS/Android）",
-    opt_engine_native: "原生 Rootless 模式（仅限 Linux）",
-    hint_engine_mode: "非 Linux 平台必须使用 QEMU 模式。",
+    opt_engine_native: "原生 Rootless 模式（仅限 Linux x86_64）",
+    hint_engine_mode: "非 Linux x86_64 平台必须使用 QEMU 模式。",
     lbl_guest_ram: "虚拟机分配内存 (MB)",
     hint_guest_ram: "分配给 QEMU 虚拟机的运行内存（512MB 为推荐值）。",
     lbl_guest_cpu: "虚拟机 CPU 核心数 (SMP)",
@@ -288,6 +295,7 @@ const translations = {
     lbl_apple_id: "Apple ID（邮箱）",
     ph_apple_id: "name@example.com",
     lbl_password: "密码",
+    btn_toggle_password: "显示/隐藏密码",
     lbl_2fa: "双重认证验证码（可选）",
     ph_2fa: "6位数字验证码（若受信任设备已提示）",
     hint_2fa: "若您的 Apple ID 已开启双重认证，可直接在此填写 6 位验证码，或在系统提示时再输入。",
@@ -308,6 +316,9 @@ const translations = {
     status_checking: "正在检测...",
     status_present_verified: "已就绪并通过校验",
     status_missing_required: "缺失 - QEMU 模式必须具备",
+    badge_qemu_ready: "全部组件就绪",
+    badge_qemu_incomplete: "组件不完整 / 缺失",
+    badge_checking: "正在检测...",
     title_ci_download: "从 CI Nightly 自动下载",
     desc_ci_download_pre: "直接从官方 Nightly 自动构建仓库下载并安装适配 ",
     desc_ci_download_post: " 的发布包。",
@@ -350,6 +361,8 @@ const translations = {
     log_cfg_saved: "[gui] 配置已成功保存。",
     confirm_reset_settings: "是否确认将所有设置恢复为默认值？",
     alert_copied: "已复制到剪贴板: %s",
+    confirm_start_without_login: "检测到尚未登录 Apple Music 账号（无登录缓存）。wrapper-lite 依赖缓存的凭据进行音频解密。是否仍要直接启动服务？",
+    hint_regions_no_login: "未检测到有效登录缓存 - 请前往账号与认证登录",
     log_service_starting: "[gui] 正在启动 wrapper-lite 服务...",
     log_service_start_failed: "[error] 启动服务失败: %s",
     alert_start_failed: "启动失败: %s",
@@ -470,6 +483,10 @@ function setLanguage(lang) {
   if (logsBadge) {
     logsBadge.innerText = `${logsCount} ${t('unit_lines')}`;
   }
+  const dashLogsBadge = document.getElementById('dashboard-logs-count-badge');
+  if (dashLogsBadge) {
+    dashLogsBadge.innerText = `${logsCount} ${t('unit_lines')}`;
+  }
 }
 
 function updateMemorySliderDisplay(val) {
@@ -541,6 +558,16 @@ function switchToTab(tabName) {
   document.querySelectorAll('.tab-pane').forEach(pane => {
     pane.classList.toggle('active', pane.id === `tab-${tabName}`);
   });
+  if (tabName === 'qemu') {
+    checkQemuPackageStatus();
+  }
+}
+
+function isLinuxX86_64Platform() {
+  if (platformInfo.isAndroid) return false;
+  const os = (platformInfo.os || '').toLowerCase();
+  const arch = (platformInfo.arch || '').toLowerCase();
+  return os === 'linux' && (arch === 'amd64' || arch === 'x86_64');
 }
 
 // Platform Detection
@@ -549,6 +576,11 @@ async function detectPlatform() {
     platformInfo.isAndroid = true;
     platformInfo.os = 'android';
     platformInfo.arch = 'aarch64';
+    if (window.Android && typeof window.Android.hasLoginCache === 'function') {
+      try {
+        hasCachedLogin = window.Android.hasLoginCache();
+      } catch (e) {}
+    }
     updatePlatformUI();
     return;
   }
@@ -558,6 +590,9 @@ async function detectPlatform() {
     if (res.ok) {
       const data = await res.json();
       platformInfo = { ...platformInfo, ...data };
+      if (typeof data.hasLoginCache === 'boolean') {
+        hasCachedLogin = data.hasLoginCache;
+      }
       updatePlatformUI();
     }
   } catch (err) {
@@ -576,12 +611,27 @@ function updatePlatformUI() {
   let osName = 'Desktop';
   if (platformInfo.os === 'windows') osName = 'Windows (x86_64)';
   else if (platformInfo.os === 'darwin' || platformInfo.os === 'macos') osName = 'macOS';
-  else if (platformInfo.os === 'linux') osName = 'Linux';
+  else if (platformInfo.os === 'linux') {
+    const isX86 = platformInfo.arch === 'amd64' || platformInfo.arch === 'x86_64';
+    osName = isX86 ? 'Linux (x86_64)' : `Linux (${platformInfo.arch || 'unknown'})`;
+  }
   else if (platformInfo.os === 'android') osName = 'Android';
 
   if (badge) badge.innerText = t('platform_gui', osName);
   if (metricBadge) metricBadge.innerText = osName;
   if (osLabel) osLabel.innerText = osName;
+
+  // On non-Linux x86_64, disable native mode and force QEMU
+  const isLinuxX86 = isLinuxX86_64Platform();
+  if (engineSelect) {
+    const nativeOpt = engineSelect.querySelector('option[value="native"]');
+    if (nativeOpt) {
+      nativeOpt.disabled = !isLinuxX86;
+    }
+    if (!isLinuxX86 && engineSelect.value === 'native') {
+      engineSelect.value = 'qemu';
+    }
+  }
 
   const currentEngine = engineSelect ? engineSelect.value : 'qemu';
   if (engineMetric) {
@@ -589,13 +639,6 @@ function updatePlatformUI() {
   }
   if (engineDetail) {
     engineDetail.innerText = currentEngine === 'native' ? t('hint_engine_host') : t('hint_engine_vm');
-  }
-
-  // On non-Linux, disable native mode
-  if (engineSelect && platformInfo.os !== 'linux') {
-    engineSelect.value = 'qemu';
-    const nativeOpt = engineSelect.querySelector('option[value="native"]');
-    if (nativeOpt) nativeOpt.disabled = true;
   }
 }
 
@@ -625,6 +668,9 @@ function loadSavedSettings() {
   }
 
   const cfg = { ...defaults, ...saved };
+  if (!isLinuxX86_64Platform() && cfg.engine === 'native') {
+    cfg.engine = 'qemu';
+  }
   document.getElementById('cfg-host').value = cfg.host;
   document.getElementById('cfg-host-port').value = cfg.port;
   document.getElementById('cfg-proxy').value = cfg.proxy;
@@ -643,11 +689,17 @@ function loadSavedSettings() {
 }
 
 function saveSettings() {
+  let engineVal = document.getElementById('cfg-engine-mode').value;
+  if (!isLinuxX86_64Platform() && engineVal === 'native') {
+    engineVal = 'qemu';
+    document.getElementById('cfg-engine-mode').value = 'qemu';
+  }
+
   const cfg = {
     host: document.getElementById('cfg-host').value.trim() || '127.0.0.1',
     port: parseInt(document.getElementById('cfg-host-port').value, 10) || 12340,
     proxy: document.getElementById('cfg-proxy').value.trim(),
-    engine: document.getElementById('cfg-engine-mode').value,
+    engine: engineVal,
     memory: document.getElementById('cfg-memory').value,
     smp: document.getElementById('cfg-smp').value,
     accel: document.getElementById('cfg-accel').value,
@@ -689,6 +741,14 @@ function updateEndpointDisplay(host, port) {
 
 // Service Lifecycle
 async function handleStart() {
+  if (hasCachedLogin === false) {
+    const proceed = confirm(t('confirm_start_without_login'));
+    if (!proceed) {
+      switchToTab('account');
+      return;
+    }
+  }
+
   setStartingUI();
   appendLog(t('log_service_starting'), 'system');
 
@@ -796,6 +856,9 @@ function setRunningUI(regions = []) {
   if (currentRegions && currentRegions.length > 0) {
     document.getElementById('metric-regions').innerText = currentRegions.join(', ');
     document.getElementById('metric-regions-hint').innerText = `${currentRegions.length} ${t('hint_regions_active')}`;
+  } else {
+    document.getElementById('metric-regions').innerText = t('val_none');
+    document.getElementById('metric-regions-hint').innerText = t('hint_regions_no_login');
   }
 }
 
@@ -826,6 +889,8 @@ function setStoppedUI() {
 
 function setStartingUI() {
   isStarting = true;
+  document.getElementById('btn-start').classList.add('hidden');
+  document.getElementById('btn-stop').classList.remove('hidden');
   document.getElementById('status-dot').className = 'status-dot starting';
   document.getElementById('status-text').innerText = t('status_starting');
   document.getElementById('metric-state').innerText = t('status_booting');
@@ -862,18 +927,26 @@ async function checkServiceHealth() {
   let backendRunning = false;
   if (isAndroidApp && window.Android.isServiceRunning) {
     backendRunning = window.Android.isServiceRunning();
+    if (typeof window.Android.hasLoginCache === 'function') {
+      try {
+        hasCachedLogin = window.Android.hasLoginCache();
+      } catch (e) {}
+    }
   } else {
     try {
       const res = await fetch('/api/status');
       if (res.ok) {
         const data = await res.json();
         backendRunning = data.running;
+        if (typeof data.hasLoginCache === 'boolean') {
+          hasCachedLogin = data.hasLoginCache;
+        }
       }
     } catch (e) {}
   }
 
   if (!backendRunning) {
-    if (isRunning) setStoppedUI();
+    if (isRunning || isStarting) setStoppedUI();
     return;
   }
 
@@ -990,6 +1063,7 @@ async function handleLogin() {
     });
     const result = await res.json();
     if (res.ok && result.success) {
+      hasCachedLogin = true;
       appendLog(t('log_login_succeeded'), 'run');
       alert(t('alert_login_succeeded'));
     } else if (result.need2FA) {
@@ -1004,6 +1078,23 @@ async function handleLogin() {
   } finally {
     submitBtn.disabled = false;
     progressBox.classList.add('hidden');
+  }
+}
+
+function togglePasswordVisibility() {
+  const pwdInput = document.getElementById('auth-password');
+  const eyeIcon = document.getElementById('eye-icon');
+  const eyeOffIcon = document.getElementById('eye-off-icon');
+  if (!pwdInput) return;
+
+  if (pwdInput.type === 'password') {
+    pwdInput.type = 'text';
+    if (eyeIcon) eyeIcon.classList.add('hidden');
+    if (eyeOffIcon) eyeOffIcon.classList.remove('hidden');
+  } else {
+    pwdInput.type = 'password';
+    if (eyeIcon) eyeIcon.classList.remove('hidden');
+    if (eyeOffIcon) eyeOffIcon.classList.add('hidden');
   }
 }
 
@@ -1080,6 +1171,17 @@ function updateQemuChecklist(data) {
   const missingAlert = document.getElementById('qemu-missing-alert');
   if (missingAlert) {
     missingAlert.classList.toggle('hidden', allReady);
+  }
+
+  const pkgBadge = document.getElementById('qemu-package-badge');
+  if (pkgBadge) {
+    if (allReady) {
+      pkgBadge.innerText = t('badge_qemu_ready');
+      pkgBadge.className = 'badge badge-info';
+    } else {
+      pkgBadge.innerText = t('badge_qemu_incomplete');
+      pkgBadge.className = 'badge badge-warning';
+    }
   }
 }
 
@@ -1259,11 +1361,40 @@ async function executeApiTest() {
   }
 }
 
+function safeCopyToClipboard(text, successMsg) {
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard.writeText(text).then(() => {
+      alert(successMsg);
+    }).catch(() => {
+      fallbackCopy(text, successMsg);
+    });
+  } else {
+    fallbackCopy(text, successMsg);
+  }
+}
+
+function fallbackCopy(text, successMsg) {
+  try {
+    const ta = document.createElement('textarea');
+    ta.value = text;
+    ta.style.position = 'fixed';
+    ta.style.opacity = '0';
+    document.body.appendChild(ta);
+    ta.focus();
+    ta.select();
+    const ok = document.execCommand('copy');
+    document.body.removeChild(ta);
+    if (ok) {
+      alert(successMsg);
+      return;
+    }
+  } catch (e) {}
+  alert(successMsg);
+}
+
 function copyTestResponse() {
   const text = document.getElementById('test-response-body').innerText;
-  navigator.clipboard.writeText(text).then(() => {
-    alert(t('alert_response_copied'));
-  });
+  safeCopyToClipboard(text, t('alert_response_copied'));
 }
 
 // Live Logs Terminal
@@ -1292,7 +1423,8 @@ function appendLog(line, forcedClass = null) {
   if (line.includes('request: GET /status')) return;
 
   const terminal = document.getElementById('logs-terminal');
-  if (!terminal) return;
+  const dashTerminal = document.getElementById('dashboard-logs-terminal');
+  if (!terminal && !dashTerminal) return;
 
   const div = document.createElement('div');
   div.className = 'log-line';
@@ -1312,31 +1444,47 @@ function appendLog(line, forcedClass = null) {
   }
 
   div.innerText = line;
-  terminal.appendChild(div);
+
+  if (terminal) {
+    terminal.appendChild(div);
+  }
+  if (dashTerminal) {
+    dashTerminal.appendChild(div.cloneNode(true));
+  }
 
   logsCount++;
   const badge = document.getElementById('logs-count-badge');
   if (badge) badge.innerText = `${logsCount} ${t('unit_lines')}`;
+  const dashBadge = document.getElementById('dashboard-logs-count-badge');
+  if (dashBadge) dashBadge.innerText = `${logsCount} ${t('unit_lines')}`;
 
   // Auto-scroll
-  if (document.getElementById('chk-autoscroll').checked) {
+  const chkAutoscroll = document.getElementById('chk-autoscroll');
+  if (terminal && chkAutoscroll && chkAutoscroll.checked) {
     terminal.scrollTop = terminal.scrollHeight;
+  }
+  const chkDashAutoscroll = document.getElementById('chk-dashboard-autoscroll');
+  if (dashTerminal && chkDashAutoscroll && chkDashAutoscroll.checked) {
+    dashTerminal.scrollTop = dashTerminal.scrollHeight;
   }
 }
 
 function clearLogs() {
   const terminal = document.getElementById('logs-terminal');
   if (terminal) terminal.innerHTML = '';
+  const dashTerminal = document.getElementById('dashboard-logs-terminal');
+  if (dashTerminal) dashTerminal.innerHTML = '';
   logsCount = 0;
-  document.getElementById('logs-count-badge').innerText = `0 ${t('unit_lines')}`;
+  const badge = document.getElementById('logs-count-badge');
+  if (badge) badge.innerText = `0 ${t('unit_lines')}`;
+  const dashBadge = document.getElementById('dashboard-logs-count-badge');
+  if (dashBadge) dashBadge.innerText = `0 ${t('unit_lines')}`;
 }
 
 function copyAllLogs() {
-  const terminal = document.getElementById('logs-terminal');
+  const terminal = document.getElementById('logs-terminal') || document.getElementById('dashboard-logs-terminal');
   if (!terminal) return;
-  navigator.clipboard.writeText(terminal.innerText).then(() => {
-    alert(t('alert_logs_copied'));
-  });
+  safeCopyToClipboard(terminal.innerText, t('alert_logs_copied'));
 }
 
 function escapeHtml(str) {
@@ -1401,6 +1549,7 @@ window.onAndroidLoginResult = (resultJson) => {
   }
 
   if (result.success) {
+    hasCachedLogin = true;
     appendLog(t('log_login_succeeded'), 'run');
     alert(t('alert_login_succeeded'));
   } else if (result.need2FA) {

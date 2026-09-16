@@ -17,6 +17,13 @@
 #include <sys/wait.h>
 #include <sys/stat.h>
 #include <limits.h>
+#include <signal.h>
+static pid_t g_childPid = -1;
+static void qemuSignalHandler(int sig) {
+    if (g_childPid > 0) {
+        kill(g_childPid, sig);
+    }
+}
 #endif
 #ifdef __APPLE__
 #include <mach-o/dyld.h>
@@ -164,6 +171,9 @@ static int spawnAndWait(const std::vector<std::string>& args) {
     CloseHandle(pi.hThread);
     return (int)code;
 #else
+    signal(SIGINT, qemuSignalHandler);
+    signal(SIGTERM, qemuSignalHandler);
+    signal(SIGHUP, qemuSignalHandler);
     std::vector<char*> argv;
     argv.reserve(args.size() + 1);
     for (const auto& a : args) argv.push_back(const_cast<char*>(a.c_str()));
@@ -174,12 +184,17 @@ static int spawnAndWait(const std::vector<std::string>& args) {
         return 1;
     }
     if (pid == 0) {
+        signal(SIGINT, SIG_DFL);
+        signal(SIGTERM, SIG_DFL);
+        signal(SIGHUP, SIG_DFL);
         execvp(argv[0], argv.data());
         std::perror("execvp");
         _exit(127);
     }
+    g_childPid = pid;
     int status = 0;
     waitpid(pid, &status, 0);
+    g_childPid = -1;
     return WIFEXITED(status) ? WEXITSTATUS(status) : 1;
 #endif
 }

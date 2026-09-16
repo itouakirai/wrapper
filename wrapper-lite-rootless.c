@@ -23,7 +23,7 @@ pid_t child_proc = -1;
 
 static void intHan(int signum) {
     if (child_proc != -1) {
-        kill(child_proc, SIGKILL);
+        kill(child_proc, signum);
     }
 }
 
@@ -81,6 +81,8 @@ int main(int argc, char *argv[], char *envp[]) {
         perror("signal");
         return 1;
     }
+    signal(SIGTERM, intHan);
+    signal(SIGHUP, intHan);
 
     if (setup_unprivileged_namespaces() != 0) {
         return 1;
