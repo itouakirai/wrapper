@@ -107,6 +107,8 @@ func main() {
 	// REST APIs
 	mux.HandleFunc("/api/info", handleInfo)
 	mux.HandleFunc("/api/status", handleStatus)
+	mux.HandleFunc("/api/service/status", handleServiceStatus)
+	mux.HandleFunc("/api/proxy", handleProxy)
 	mux.HandleFunc("/api/start", handleStart)
 	mux.HandleFunc("/api/stop", handleStop)
 	mux.HandleFunc("/api/login", handleLogin)
@@ -193,6 +195,125 @@ func handleStatus(w http.ResponseWriter, r *http.Request) {
 		"port":    state.config.Port,
 		"engine":  state.config.Engine,
 	})
+}
+
+func handleServiceStatus(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	state.mu.RLock()
+	running := state.isRunning
+	host := state.config.Host
+	port := state.config.Port
+	state.mu.RUnlock()
+
+	if !running {
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"online":  false,
+			"message": "service process not running",
+		})
+		return
+	}
+
+	targetHost := host
+	if targetHost == "" || targetHost == "0.0.0.0" {
+		targetHost = "127.0.0.1"
+	}
+
+	serviceUrl := fmt.Sprintf("http://%s:%d/status", targetHost, port)
+	client := &http.Client{
+		Timeout: 2 * time.Second,
+	}
+
+	startTime := time.Now()
+	resp, err := client.Get(serviceUrl)
+	latency := time.Since(startTime).Milliseconds()
+
+	if err != nil {
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"online":  false,
+			"latency": latency,
+			"message": err.Error(),
+		})
+		return
+	}
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"online":  false,
+			"latency": latency,
+			"message": err.Error(),
+		})
+		return
+	}
+
+	var parsed map[string]interface{}
+	if err := json.Unmarshal(body, &parsed); err != nil {
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"online":  false,
+			"latency": latency,
+			"message": "invalid json from service",
+		})
+		return
+	}
+
+	parsed["online"] = (resp.StatusCode == http.StatusOK)
+	parsed["latency"] = latency
+	json.NewEncoder(w).Encode(parsed)
+}
+
+func handleProxy(w http.ResponseWriter, r *http.Request) {
+	state.mu.RLock()
+	host := state.config.Host
+	port := state.config.Port
+	running := state.isRunning
+	state.mu.RUnlock()
+
+	if !running {
+		http.Error(w, "service process not running", http.StatusServiceUnavailable)
+		return
+	}
+
+	targetHost := host
+	if targetHost == "" || targetHost == "0.0.0.0" {
+		targetHost = "127.0.0.1"
+	}
+
+	endpoint := r.URL.Query().Get("endpoint")
+	if endpoint == "" {
+		endpoint = "/status"
+	}
+	if !strings.HasPrefix(endpoint, "/") {
+		endpoint = "/" + endpoint
+	}
+
+	targetUrl := fmt.Sprintf("http://%s:%d%s", targetHost, port, endpoint)
+
+	proxyReq, err := http.NewRequest(r.Method, targetUrl, r.Body)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	for k, v := range r.Header {
+		if strings.HasPrefix(strings.ToLower(k), "content-") {
+			proxyReq.Header[k] = v
+		}
+	}
+
+	client := &http.Client{Timeout: 30 * time.Second}
+	resp, err := client.Do(proxyReq)
+	if err != nil {
+		http.Error(w, fmt.Sprintf("Proxy error: %v", err), http.StatusBadGateway)
+		return
+	}
+	defer resp.Body.Close()
+
+	for k, v := range resp.Header {
+		w.Header()[k] = v
+	}
+	w.WriteHeader(resp.StatusCode)
+	io.Copy(w, resp.Body)
 }
 
 func handleStart(w http.ResponseWriter, r *http.Request) {
@@ -584,6 +705,10 @@ func (s *AppState) streamOutput(r io.Reader) {
 	scanner := bufio.NewScanner(r)
 	for scanner.Scan() {
 		line := scanner.Text()
+		// Filter out routine health-check polling logs to keep live GUI log clean
+		if strings.Contains(line, "request: GET /status") {
+			continue
+		}
 		s.appendLog(line)
 	}
 }

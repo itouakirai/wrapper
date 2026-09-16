@@ -629,9 +629,29 @@ int main(int argc, char* argv[]) {
     svr.set_payload_max_length(1 << 20);
     svr.set_tcp_nodelay(true);
 
+    svr.set_default_headers({
+        {"Access-Control-Allow-Origin", "*"},
+        {"Access-Control-Allow-Methods", "GET, POST, OPTIONS"},
+        {"Access-Control-Allow-Headers", "*"},
+        {"Access-Control-Allow-Private-Network", "true"}
+    });
+
     svr.set_pre_routing_handler([](const httplib::Request& req, httplib::Response& res) {
-        (void)res;
-        LOG_INFO("request: %s %s", req.method.c_str(), req.target.c_str());
+        res.set_header("Access-Control-Allow-Origin", "*");
+        res.set_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
+        res.set_header("Access-Control-Allow-Headers", "*");
+        res.set_header("Access-Control-Allow-Private-Network", "true");
+
+        if (req.method == "OPTIONS") {
+            res.status = 204;
+            return httplib::Server::HandlerResponse::Handled;
+        }
+
+        if (req.path == "/status") {
+            LOG_DEBUG("request: %s %s", req.method.c_str(), req.target.c_str());
+        } else {
+            LOG_INFO("request: %s %s", req.method.c_str(), req.target.c_str());
+        }
         return httplib::Server::HandlerResponse::Unhandled;
     });
 

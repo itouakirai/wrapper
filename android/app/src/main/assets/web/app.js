@@ -877,7 +877,7 @@ async function checkServiceHealth() {
     return;
   }
 
-  // Ping the wrapper-lite HTTP port directly or via proxy
+  // Ping the wrapper-lite HTTP port directly or via backend proxy
   const host = document.getElementById('cfg-host').value.trim() || '127.0.0.1';
   const port = document.getElementById('cfg-host-port').value.trim() || '12340';
   const pingTarget = host === '0.0.0.0' ? '127.0.0.1' : host;
@@ -894,14 +894,36 @@ async function checkServiceHealth() {
       const pingBadge = document.getElementById('metric-ping-badge');
       pingBadge.innerText = latency < 100 ? t('badge_good') : t('badge_normal');
       pingBadge.className = 'badge badge-info';
-    } else {
-      setStartingUI();
+      return;
     }
   } catch (err) {
-    // Port not answering yet (guest still booting)
-    if (backendRunning) {
-      setStartingUI();
-    }
+    // Direct fetch failed (e.g. CORS restrictions on older images or port not answering yet)
+  }
+
+  // Fallback to GUI backend service status probe (bypasses browser CORS completely)
+  if (!isAndroidApp && backendRunning) {
+    try {
+      const startProxy = Date.now();
+      const res = await fetch('/api/service/status', { signal: AbortSignal.timeout(2500) });
+      if (res.ok) {
+        const data = await res.json();
+        if (data.online) {
+          const latency = data.latency || (Date.now() - startProxy);
+          const regions = data.data && data.data.regions ? data.data.regions : [];
+          setRunningUI(regions);
+          document.getElementById('metric-latency').innerText = `${latency} ms`;
+          const pingBadge = document.getElementById('metric-ping-badge');
+          pingBadge.innerText = latency < 100 ? t('badge_good') : t('badge_normal');
+          pingBadge.className = 'badge badge-info';
+          return;
+        }
+      }
+    } catch (e) {}
+  }
+
+  // Port not answering yet (guest still booting)
+  if (backendRunning) {
+    setStartingUI();
   }
 }
 
@@ -1169,7 +1191,18 @@ async function executeApiTest() {
 
   try {
     const start = Date.now();
-    const res = await fetch(url);
+    let res;
+    try {
+      res = await fetch(url);
+    } catch (directErr) {
+      if (!isAndroidApp) {
+        // Fallback through backend proxy if direct fetch fails (e.g. CORS)
+        const proxyUrl = `/api/proxy?endpoint=${encodeURIComponent(ep + query)}`;
+        res = await fetch(proxyUrl);
+      } else {
+        throw directErr;
+      }
+    }
     const latency = Date.now() - start;
     statusEl.innerText = `${res.status} ${res.statusText} (${latency}ms)`;
 
@@ -1215,6 +1248,9 @@ function initLogStream() {
 }
 
 function appendLog(line, forcedClass = null) {
+  // Ignore routine health-check polling logs to avoid cluttering live GUI log
+  if (line.includes('request: GET /status')) return;
+
   const terminal = document.getElementById('logs-terminal');
   if (!terminal) return;
 
