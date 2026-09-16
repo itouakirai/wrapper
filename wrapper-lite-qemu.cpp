@@ -273,7 +273,16 @@ static std::vector<std::string> buildQemuArgs(const std::string& qemuBin,
     args.push_back("-kernel");
     args.push_back(dir + "/vmlinuz-lite-qemu");
     args.push_back("-initrd");
-    args.push_back(dir + "/lite-initramfs.cpio.gz");
+    std::string initrdPath = dir + "/lite-initramfs.cpio.gz";
+    if (!fileExists(initrdPath) && fileExists(dir + "/lite-initramfs.cpio")) {
+        std::string legacyPath = dir + "/lite-initramfs.cpio";
+        if (std::rename(legacyPath.c_str(), initrdPath.c_str()) == 0) {
+            // Renamed successfully to canonical name
+        } else {
+            initrdPath = legacyPath;
+        }
+    }
+    args.push_back(initrdPath);
     std::string appendStr = "console=ttyS0 quiet net.ifnames=0 biosdevname=0";
     {
         std::ifstream af(argsFile, std::ios::binary);

@@ -49,7 +49,21 @@ class QemuAssetManager(private val context: Context) {
     }
 
     fun getInitramfs(): File {
-        return File(qemuDir, "lite-initramfs.cpio.gz")
+        val canonical = File(qemuDir, "lite-initramfs.cpio.gz")
+        if (canonical.exists()) return canonical
+
+        val stripped = File(qemuDir, "lite-initramfs.cpio")
+        if (stripped.exists()) {
+            try {
+                if (stripped.renameTo(canonical)) {
+                    return canonical
+                }
+            } catch (e: Exception) {
+                Log.w(TAG, "Failed to auto-rename lite-initramfs.cpio to lite-initramfs.cpio.gz", e)
+            }
+            return stripped
+        }
+        return canonical
     }
 
     fun getDataDisk(): File {
@@ -186,6 +200,18 @@ class QemuAssetManager(private val context: Context) {
 
             copyAssetFolder("qemu", qemuDir)
 
+            // Auto-heal: In case AAPT/AAPT2 stripped .gz from lite-initramfs.cpio.gz during packaging,
+            // or an older version already unpacked it as lite-initramfs.cpio
+            val strippedInitramfs = File(qemuDir, "lite-initramfs.cpio")
+            val canonicalInitramfs = File(qemuDir, "lite-initramfs.cpio.gz")
+            if (strippedInitramfs.exists() && !canonicalInitramfs.exists()) {
+                try {
+                    strippedInitramfs.renameTo(canonicalInitramfs)
+                } catch (e: Exception) {
+                    Log.w(TAG, "Failed to rename stripped initramfs asset", e)
+                }
+            }
+
             // Ensure executable permissions and resolve libraries
             fixPermissionsAndLibraries(qemuDir)
             fixPermissionsAndLibraries(context.filesDir)
@@ -221,11 +247,17 @@ class QemuAssetManager(private val context: Context) {
         try {
             // Try opening as a file stream first
             assetManager.open(srcName).use { input ->
-                if (dstDir.name == "data.img" && dstDir.exists() && dstDir.length() > 0) {
+                var targetFile = dstDir
+                // AAPT/AAPT2 automatically strips the ".gz" extension from asset filenames when packaging APK.
+                // Restore canonical filename when writing to disk.
+                if (targetFile.name == "lite-initramfs.cpio") {
+                    targetFile = File(targetFile.parentFile, "lite-initramfs.cpio.gz")
+                }
+                if (targetFile.name == "data.img" && targetFile.exists() && targetFile.length() > 0) {
                     return
                 }
-                dstDir.parentFile?.mkdirs()
-                FileOutputStream(dstDir).use { output ->
+                targetFile.parentFile?.mkdirs()
+                FileOutputStream(targetFile).use { output ->
                     input.copyTo(output)
                 }
             }
@@ -236,7 +268,8 @@ class QemuAssetManager(private val context: Context) {
                 dstDir.mkdirs()
                 for (child in children) {
                     val subSrc = if (srcName.isEmpty()) child else "$srcName/$child"
-                    copyAssetFolder(subSrc, File(dstDir, child))
+                    val destChildName = if (child == "lite-initramfs.cpio") "lite-initramfs.cpio.gz" else child
+                    copyAssetFolder(subSrc, File(dstDir, destChildName))
                 }
             }
         }
@@ -338,13 +371,19 @@ class QemuAssetManager(private val context: Context) {
         ZipInputStream(zipFile.inputStream().buffered()).use { zis ->
             var entry = zis.nextEntry
             while (entry != null) {
-                val outFile = File(destDir, entry.name)
+                val extractedFile = File(destDir, entry.name)
                 // Prevent Zip Slip
                 val canonicalDest = destDir.canonicalPath
-                val canonicalOut = outFile.canonicalPath
+                val canonicalOut = extractedFile.canonicalPath
                 if (!canonicalOut.startsWith(canonicalDest + File.separator) && canonicalOut != canonicalDest) {
                     entry = zis.nextEntry
                     continue
+                }
+
+                val outFile = if (extractedFile.name == "lite-initramfs.cpio") {
+                    File(extractedFile.parentFile, "lite-initramfs.cpio.gz")
+                } else {
+                    extractedFile
                 }
 
                 if (entry.isDirectory) {
