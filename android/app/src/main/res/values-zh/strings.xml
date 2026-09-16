@@ -1,0 +1,7 @@
+<resources>
+    <string name="app_name">wrapper-lite</string>
+    <string name="notification_channel_name">wrapper-lite 后台服务</string>
+    <string name="notification_channel_desc">显示正在运行的 QEMU 虚拟机状态</string>
+    <string name="service_running">wrapper-lite 服务正在运行，监听端口 12340</string>
+    <string name="action_stop">停止服务</string>
+</resources>

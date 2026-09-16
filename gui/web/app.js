@@ -5,11 +5,15 @@
 
 // State
 let isRunning = false;
+let isStarting = false;
 let serviceStartTime = null;
 let uptimeInterval = null;
 let statusPollInterval = null;
 let logEventSource = null;
 let logsCount = 0;
+let currentLang = 'en';
+let currentRegions = [];
+let lastQemuData = null;
 let platformInfo = {
   os: 'unknown',
   arch: 'unknown',
@@ -22,9 +26,466 @@ let platformInfo = {
 // Detect Android Native Bridge
 const isAndroidApp = typeof window.Android !== 'undefined';
 
+// Localization Dictionary
+const translations = {
+  en: {
+    doc_title: "wrapper-lite GUI",
+    platform_badge_default: "Cross-Platform GUI",
+    platform_gui: "%s GUI",
+    status_stopped: "Stopped",
+    status_running: "Running",
+    status_starting: "Starting...",
+    status_booting: "Booting...",
+    btn_lang_toggle: "切换为中文 / Switch to Chinese",
+    btn_lang_label: "中文",
+    btn_theme_toggle: "Toggle Theme",
+    btn_start: "Start Service",
+    btn_stop: "Stop Service",
+    btn_restart: "Restart",
+    btn_open_browser: "Open API",
+    lbl_endpoint: "Endpoint:",
+    btn_copy_url: "Copy URL",
+    tab_dashboard: "Dashboard",
+    tab_settings: "Settings",
+    tab_account: "Account & Auth",
+    tab_qemu: "QEMU Package",
+    tab_tester: "API Tester",
+    tab_logs: "Live Logs",
+    metric_service_state: "Service State",
+    badge_inactive: "Inactive",
+    badge_online: "Online",
+    metric_storefront_regions: "Storefront Regions",
+    val_none: "None",
+    hint_regions_boot: "Available after successful boot",
+    hint_regions_active: "storefront(s) active",
+    metric_active_platform: "Active Platform",
+    badge_detecting: "Detecting...",
+    val_engine_qemu: "QEMU Guest",
+    val_engine_native: "Native Rootless",
+    hint_engine_vm: "Self-contained VM",
+    hint_engine_host: "Host Process",
+    metric_api_latency: "API Latency",
+    badge_good: "Good",
+    badge_normal: "Normal",
+    hint_health_check: "Health check /status",
+    alert_qemu_missing_title: "Prebuilt QEMU Package Not Installed",
+    alert_qemu_missing_desc: "Non-Linux platforms require the precompiled QEMU all-in-one package to run. You can download and install it automatically with one click.",
+    btn_download_pkg: "Download Package",
+    title_endpoints_ref: "Quick Endpoints Reference",
+    th_method: "Method",
+    th_endpoint: "Endpoint",
+    th_description: "Description",
+    th_action: "Action",
+    ep_status_desc: "Health check and supported storefront regions",
+    ep_m3u8_desc: "Fetch song M3U8 playback stream",
+    ep_key_desc: "Fetch track decryption key",
+    ep_lyrics_desc: "Fetch lyrics (syllable / line-timed)",
+    ep_webplayback_desc: "Fetch web playback tokens",
+    btn_test: "Test",
+    btn_try: "Try",
+    title_network_binding: "Network & Binding",
+    lbl_host_address: "Host Listen Address",
+    ph_host_address: "127.0.0.1 or 0.0.0.0",
+    btn_preset_local: "Local (127.0.0.1)",
+    btn_preset_lan: "LAN (0.0.0.0)",
+    hint_host_address: "Set to 0.0.0.0 to expose the service to other devices on your local network.",
+    lbl_host_port: "Host Listen Port",
+    hint_host_port: "The port you connect to on this device (default: 12340).",
+    lbl_proxy: "HTTP / SOCKS5 Proxy (Optional)",
+    ph_proxy: "e.g. http://127.0.0.1:7890 or socks5://127.0.0.1:1080",
+    hint_proxy: "Forward requests through a proxy for region unlocking.",
+    title_qemu_perf: "QEMU & Performance",
+    lbl_runtime_mode: "Runtime Mode",
+    opt_engine_qemu: "QEMU Virtual Guest (Recommended for Windows/macOS/Android)",
+    opt_engine_native: "Native Rootless (Linux Only)",
+    hint_engine_mode: "Non-Linux platforms require QEMU mode.",
+    lbl_guest_ram: "Guest RAM (MB)",
+    hint_guest_ram: "Allocated RAM for QEMU guest (512MB is optimal).",
+    lbl_guest_cpu: "Guest CPU Cores (SMP)",
+    lbl_accel: "Hardware Acceleration",
+    opt_accel_auto: "Auto (Recommended)",
+    opt_accel_whpx: "WHPX (Windows Hypervisor Platform)",
+    opt_accel_kvm: "KVM (Linux Kernel Virtual Machine)",
+    opt_accel_hvf: "HVF (macOS Hypervisor)",
+    opt_accel_tcg: "TCG (Software Emulation / Android Fallback)",
+    hint_accel: "Falls back automatically to TCG software emulation if acceleration fails.",
+    lbl_log_level: "Log Level",
+    btn_save_cfg: "Save Configuration",
+    btn_reset_cfg: "Reset to Defaults",
+    title_auth: "Apple Music Account Authentication",
+    desc_auth: "Logging in caches decryption keys and tokens to data.img (or native data dir). Once tokens are cached, wrapper-lite can run in service mode without re-entering passwords.",
+    lbl_apple_id: "Apple ID (Email)",
+    ph_apple_id: "name@example.com",
+    lbl_password: "Password",
+    lbl_2fa: "2FA Verification Code (Optional)",
+    ph_2fa: "6-digit code (if prompted on your device)",
+    hint_2fa: "If your Apple ID has 2-Step Verification enabled, you can enter the 6-digit code directly here or input it when prompted.",
+    lbl_refresh_interval: "Token Auto-Refresh Interval (Seconds)",
+    hint_refresh_interval: "How often background token refreshing runs (default: 1800s / 30m).",
+    lbl_device_info: "Custom Device Info Override (Optional)",
+    ph_device_info: "Leave blank to use auto-generated device identity",
+    btn_login: "Login & Cache Tokens",
+    msg_logging_in: "Logging in to Apple Music services...",
+    title_qemu_pkg: "Precompiled QEMU All-in-One Package",
+    desc_qemu_pkg: "The QEMU all-in-one package includes QEMU system binaries, kernel (vmlinuz-lite-qemu), rootfs/initramfs (lite-initramfs.cpio.gz), and preconfigured data disk (data.img).",
+    btn_check_status: "Check Status",
+    chk_launcher: "Launcher (wrapper-lite-qemu)",
+    chk_kernel: "Kernel (vmlinuz-lite-qemu)",
+    chk_initramfs: "Initramfs (lite-initramfs.cpio.gz)",
+    chk_disk: "Data Disk (data.img)",
+    chk_qemubin: "QEMU Binary & Firmware (qemu/bin)",
+    status_checking: "Checking...",
+    status_present_verified: "Present and verified",
+    status_missing_required: "Missing - required for QEMU mode",
+    title_ci_download: "Direct Download from CI Nightly Builds",
+    desc_ci_download_pre: "Download the official prebuilt release archive for ",
+    desc_ci_download_post: " directly from the nightly builds repository.",
+    lbl_source: "Source:",
+    btn_download_update_qemu: "Download / Update QEMU Package",
+    status_downloading_pkg: "Downloading package...",
+    status_extracting_pkg: "Extracting and verifying assets...",
+    status_installed_pkg: "Installation completed!",
+    status_connecting_download: "Connecting to nightly download server...",
+    title_api_tester: "API Test Bench",
+    desc_api_tester: "Quickly test Apple Music decryption and metadata endpoints against the running wrapper instance.",
+    lbl_tester_ep: "Endpoint",
+    opt_ep_status: "GET /status (Health & Storefronts)",
+    opt_ep_m3u8: "GET /m3u8 (HLS Playback Stream)",
+    opt_ep_lyrics: "GET /lyrics (Time-synced Lyrics)",
+    opt_ep_key: "GET /key (Track Key)",
+    opt_ep_webplayback: "GET /webplayback (Web Playback)",
+    lbl_adam_id: "Adam ID (Song / Track ID)",
+    lbl_key_uri: "Key URI",
+    btn_send_request: "Send Request",
+    lbl_response: "Response:",
+    btn_copy_response: "Copy Response",
+    ph_response_waiting: "Click \"Send Request\" to test endpoint...",
+    status_requesting: "Requesting...",
+    msg_waiting_response: "Waiting for response from %s",
+    status_failed: "Failed",
+    title_live_logs: "Live Console Output",
+    lbl_autoscroll: "Auto-scroll",
+    btn_clear_logs: "Clear",
+    btn_copy_logs: "Copy All",
+    log_initialized: "[gui] wrapper-lite GUI initialized.",
+    title_2fa_modal: "Two-Factor Authentication",
+    desc_2fa_modal: "Apple Music requires a 6-digit 2FA verification code sent to your Apple trusted devices.",
+    lbl_enter_code: "Enter 6-digit Code:",
+    btn_cancel: "Cancel",
+    btn_submit_code: "Submit Code",
+    val_cores: "Cores",
+    lbl_uptime: "Uptime",
+    alert_settings_saved: "Settings saved!",
+    log_cfg_saved: "[gui] Configuration saved successfully.",
+    confirm_reset_settings: "Reset settings to default?",
+    alert_copied: "Copied: %s",
+    log_service_starting: "[gui] Launching wrapper-lite service...",
+    log_service_start_failed: "[error] Failed to start service: %s",
+    alert_start_failed: "Start failed: %s",
+    log_service_stopping: "[gui] Stopping wrapper-lite service...",
+    log_service_stopped: "[gui] Service stopped.",
+    log_service_stop_failed: "[error] Failed to stop service: %s",
+    alert_enter_credentials: "Please enter both Apple ID and password",
+    log_login_initiating: "[auth] Initiating login for account %s...",
+    log_login_succeeded: "[auth] Login succeeded! Decryption tokens cached.",
+    alert_login_succeeded: "Login successful! Tokens are cached.",
+    log_login_failed: "[error] Login failed: %s",
+    alert_login_failed: "Login failed: %s",
+    alert_enter_2fa: "Please enter a 6-digit code",
+    log_pkg_downloading: "[pkg] Starting automatic download of prebuilt QEMU all-in-one package...",
+    log_pkg_installed: "[pkg] QEMU all-in-one package installed successfully!",
+    log_pkg_failed: "[error] QEMU download failed: %s",
+    alert_response_copied: "Response copied to clipboard!",
+    alert_logs_copied: "Logs copied to clipboard!",
+    unit_lines: "lines"
+  },
+  zh: {
+    doc_title: "wrapper-lite 图形界面",
+    platform_badge_default: "跨平台图形界面",
+    platform_gui: "%s 图形界面",
+    status_stopped: "已停止",
+    status_running: "运行中",
+    status_starting: "正在启动...",
+    status_booting: "启动中...",
+    btn_lang_toggle: "Switch to English / 切换为英文",
+    btn_lang_label: "EN",
+    btn_theme_toggle: "切换主题",
+    btn_start: "启动服务",
+    btn_stop: "停止服务",
+    btn_restart: "重启服务",
+    btn_open_browser: "打开 API",
+    lbl_endpoint: "服务接口:",
+    btn_copy_url: "复制地址",
+    tab_dashboard: "仪表盘",
+    tab_settings: "设置",
+    tab_account: "账号与认证",
+    tab_qemu: "QEMU 软件包",
+    tab_tester: "接口测试",
+    tab_logs: "实时日志",
+    metric_service_state: "服务状态",
+    badge_inactive: "未激活",
+    badge_online: "在线",
+    metric_storefront_regions: "商店地区",
+    val_none: "无",
+    hint_regions_boot: "服务启动成功后可用",
+    hint_regions_active: "个活跃地区",
+    metric_active_platform: "运行平台",
+    badge_detecting: "检测中...",
+    val_engine_qemu: "QEMU 虚拟机",
+    val_engine_native: "原生 Rootless 模式",
+    hint_engine_vm: "独立隔离虚拟机",
+    hint_engine_host: "宿主原生进程",
+    metric_api_latency: "接口延迟",
+    badge_good: "良好",
+    badge_normal: "正常",
+    hint_health_check: "健康检查 /status",
+    alert_qemu_missing_title: "未安装预编译 QEMU 软件包",
+    alert_qemu_missing_desc: "非 Linux 平台需要预编译的 QEMU 一体包支持。您可以一键自动下载并安装。",
+    btn_download_pkg: "下载软件包",
+    title_endpoints_ref: "常用接口速查",
+    th_method: "请求方法",
+    th_endpoint: "接口路径",
+    th_description: "功能说明",
+    th_action: "操作",
+    ep_status_desc: "健康检查与支持的商店地区",
+    ep_m3u8_desc: "获取歌曲 M3U8 音频播放流",
+    ep_key_desc: "获取音频轨道解密密钥",
+    ep_lyrics_desc: "获取逐字 / 逐行时间轴歌词",
+    ep_webplayback_desc: "获取网页端播放凭据 (Web Playback)",
+    btn_test: "测试",
+    btn_try: "尝试",
+    title_network_binding: "网络与端口绑定",
+    lbl_host_address: "监听主机地址",
+    ph_host_address: "127.0.0.1 或 0.0.0.0",
+    btn_preset_local: "本机 (127.0.0.1)",
+    btn_preset_lan: "局域网 (0.0.0.0)",
+    hint_host_address: "设置为 0.0.0.0 允许局域网内的其它设备访问服务。",
+    lbl_host_port: "服务监听端口",
+    hint_host_port: "本设备连接的端口（默认：12340）。",
+    lbl_proxy: "HTTP / SOCKS5 代理（可选）",
+    ph_proxy: "例如 http://127.0.0.1:7890 或 socks5://127.0.0.1:1080",
+    hint_proxy: "通过代理服务器转发网络请求以实现跨区解锁。",
+    title_qemu_perf: "QEMU 与性能设置",
+    lbl_runtime_mode: "运行模式",
+    opt_engine_qemu: "QEMU 虚拟客机（推荐 Windows/macOS/Android）",
+    opt_engine_native: "原生 Rootless 模式（仅限 Linux）",
+    hint_engine_mode: "非 Linux 平台必须使用 QEMU 模式。",
+    lbl_guest_ram: "虚拟机分配内存 (MB)",
+    hint_guest_ram: "分配给 QEMU 虚拟机的运行内存（512MB 为推荐值）。",
+    lbl_guest_cpu: "虚拟机 CPU 核心数 (SMP)",
+    lbl_accel: "硬件加速虚拟化",
+    opt_accel_auto: "自动检测（推荐）",
+    opt_accel_whpx: "WHPX (Windows 虚拟机监控平台)",
+    opt_accel_kvm: "KVM (Linux 内核虚拟化)",
+    opt_accel_hvf: "HVF (macOS 硬件虚拟化)",
+    opt_accel_tcg: "TCG (纯软件模拟 / Android 兼容)",
+    hint_accel: "若硬件加速不可用，将自动降级为 TCG 纯软件模拟。",
+    lbl_log_level: "日志记录级别",
+    btn_save_cfg: "保存配置",
+    btn_reset_cfg: "恢复默认设置",
+    title_auth: "Apple Music 账号身份认证",
+    desc_auth: "登录成功后会将解密密钥与令牌安全缓存至 data.img（或原生数据目录）。完成缓存后，wrapper-lite 即可在服务模式下免密持续运行。",
+    lbl_apple_id: "Apple ID（邮箱）",
+    ph_apple_id: "name@example.com",
+    lbl_password: "密码",
+    lbl_2fa: "双重认证验证码（可选）",
+    ph_2fa: "6位数字验证码（若受信任设备已提示）",
+    hint_2fa: "若您的 Apple ID 已开启双重认证，可直接在此填写 6 位验证码，或在系统提示时再输入。",
+    lbl_refresh_interval: "令牌自动刷新周期（秒）",
+    hint_refresh_interval: "后台刷新访问令牌的时间间隔（默认：1800 秒 / 30 分钟）。",
+    lbl_device_info: "自定义设备信息覆盖（可选）",
+    ph_device_info: "留空将自动生成设备指纹",
+    btn_login: "登录并缓存令牌",
+    msg_logging_in: "正在向 Apple Music 服务发起登录认证...",
+    title_qemu_pkg: "预编译 QEMU 一体化软件包",
+    desc_qemu_pkg: "QEMU 一体化软件包包含 QEMU 系统执行程序、系统内核 (vmlinuz-lite-qemu)、内存根文件系统 (lite-initramfs.cpio.gz) 以及预置的数据盘 (data.img)。",
+    btn_check_status: "检查就绪状态",
+    chk_launcher: "启动引导器 (wrapper-lite-qemu)",
+    chk_kernel: "内核镜像 (vmlinuz-lite-qemu)",
+    chk_initramfs: "内存盘镜像 (lite-initramfs.cpio.gz)",
+    chk_disk: "数据磁盘 (data.img)",
+    chk_qemubin: "QEMU 核心程序与固件 (qemu/bin)",
+    status_checking: "正在检测...",
+    status_present_verified: "已就绪并通过校验",
+    status_missing_required: "缺失 - QEMU 模式必须具备",
+    title_ci_download: "从 CI Nightly 自动下载",
+    desc_ci_download_pre: "直接从官方 Nightly 自动构建仓库下载并安装适配 ",
+    desc_ci_download_post: " 的发布包。",
+    lbl_source: "来源：",
+    btn_download_update_qemu: "下载 / 更新 QEMU 软件包",
+    status_downloading_pkg: "正在下载软件包...",
+    status_extracting_pkg: "正在解压并校验组件文件...",
+    status_installed_pkg: "安装部署完成！",
+    status_connecting_download: "正在连接 Nightly 下载服务器...",
+    title_api_tester: "API 接口测试台",
+    desc_api_tester: "便捷地向正在运行中的 wrapper 服务测试 Apple Music 解密及元数据接口。",
+    lbl_tester_ep: "选择测试接口",
+    opt_ep_status: "GET /status (健康检查与商店地区)",
+    opt_ep_m3u8: "GET /m3u8 (HLS 播放流)",
+    opt_ep_lyrics: "GET /lyrics (逐字/逐行歌词)",
+    opt_ep_key: "GET /key (音轨解密密钥)",
+    opt_ep_webplayback: "GET /webplayback (网页播放凭据)",
+    lbl_adam_id: "Adam ID（歌曲 / 音轨 ID）",
+    lbl_key_uri: "密钥 URI",
+    btn_send_request: "发送测试请求",
+    lbl_response: "响应状态：",
+    btn_copy_response: "复制响应内容",
+    ph_response_waiting: "点击“发送测试请求”查看接口响应...",
+    status_requesting: "正在请求...",
+    msg_waiting_response: "正在等待 %s 的响应...",
+    status_failed: "请求失败",
+    title_live_logs: "实时控制台输出",
+    lbl_autoscroll: "自动滚屏",
+    btn_clear_logs: "清空日志",
+    btn_copy_logs: "复制全部",
+    log_initialized: "[gui] wrapper-lite 图形界面已初始化。",
+    title_2fa_modal: "双重身份认证",
+    desc_2fa_modal: "Apple Music 需要验证发送至您受信任 Apple 设备的 6 位双重认证验证码。",
+    lbl_enter_code: "请输入 6 位验证码：",
+    btn_cancel: "取消",
+    btn_submit_code: "提交验证码",
+    val_cores: "核",
+    lbl_uptime: "运行时间",
+    alert_settings_saved: "设置已保存！",
+    log_cfg_saved: "[gui] 配置已成功保存。",
+    confirm_reset_settings: "是否确认将所有设置恢复为默认值？",
+    alert_copied: "已复制到剪贴板: %s",
+    log_service_starting: "[gui] 正在启动 wrapper-lite 服务...",
+    log_service_start_failed: "[error] 启动服务失败: %s",
+    alert_start_failed: "启动失败: %s",
+    log_service_stopping: "[gui] 正在停止 wrapper-lite 服务...",
+    log_service_stopped: "[gui] 服务已停止。",
+    log_service_stop_failed: "[error] 停止服务失败: %s",
+    alert_enter_credentials: "请输入 Apple ID 和密码",
+    log_login_initiating: "[auth] 正在为账号 %s 发起登录认证...",
+    log_login_succeeded: "[auth] 登录成功！解密令牌已安全缓存。",
+    alert_login_succeeded: "登录成功！令牌已缓存。",
+    log_login_failed: "[error] 登录认证失败: %s",
+    alert_login_failed: "登录失败: %s",
+    alert_enter_2fa: "请输入 6 位双重认证码",
+    log_pkg_downloading: "[pkg] 正在开始自动下载预编译 QEMU 一体化软件包...",
+    log_pkg_installed: "[pkg] QEMU 一体化软件包安装部署成功！",
+    log_pkg_failed: "[error] QEMU 软件包下载失败: %s",
+    alert_response_copied: "响应内容已复制到剪贴板！",
+    alert_logs_copied: "日志内容已复制到剪贴板！",
+    unit_lines: "行"
+  }
+};
+
+function t(key, ...args) {
+  const dict = translations[currentLang] || translations.en;
+  let val = dict[key] !== undefined ? dict[key] : (translations.en[key] !== undefined ? translations.en[key] : key);
+  if (args.length > 0 && typeof val === 'string') {
+    args.forEach(arg => {
+      val = val.replace('%s', arg);
+    });
+  }
+  return val;
+}
+
+function initLanguage() {
+  let lang = 'en';
+  try {
+    const savedLang = localStorage.getItem('wl_lang');
+    if (savedLang === 'zh' || savedLang === 'en') {
+      lang = savedLang;
+    } else if (navigator.language && navigator.language.toLowerCase().startsWith('zh')) {
+      lang = 'zh';
+    }
+  } catch (e) {}
+  setLanguage(lang);
+}
+
+function toggleLanguage() {
+  setLanguage(currentLang === 'zh' ? 'en' : 'zh');
+}
+
+function setLanguage(lang) {
+  currentLang = (lang === 'zh') ? 'zh' : 'en';
+  try {
+    localStorage.setItem('wl_lang', currentLang);
+  } catch (e) {}
+
+  document.documentElement.lang = currentLang === 'zh' ? 'zh-CN' : 'en';
+  document.title = t('doc_title');
+
+  const langLabel = document.getElementById('lang-text-label');
+  if (langLabel) {
+    langLabel.innerText = t('btn_lang_label');
+  }
+  const langBtn = document.getElementById('lang-toggle-btn');
+  if (langBtn) {
+    langBtn.title = t('btn_lang_toggle');
+  }
+
+  // Update all data-i18n elements
+  document.querySelectorAll('[data-i18n]').forEach(el => {
+    const key = el.getAttribute('data-i18n');
+    const val = t(key);
+    if (val !== undefined && val !== key) {
+      el.innerText = val;
+    }
+  });
+
+  // Update all data-i18n-placeholder elements
+  document.querySelectorAll('[data-i18n-placeholder]').forEach(el => {
+    const key = el.getAttribute('data-i18n-placeholder');
+    const val = t(key);
+    if (val !== undefined && val !== key) {
+      el.placeholder = val;
+    }
+  });
+
+  // Update all data-i18n-title elements
+  document.querySelectorAll('[data-i18n-title]').forEach(el => {
+    const key = el.getAttribute('data-i18n-title');
+    const val = t(key);
+    if (val !== undefined && val !== key) {
+      el.title = val;
+    }
+  });
+
+  // Update dynamic slider values
+  const mem = document.getElementById('cfg-memory');
+  if (mem) updateMemorySliderDisplay(mem.value);
+  const smp = document.getElementById('cfg-smp');
+  if (smp) updateSmpSliderDisplay(smp.value);
+
+  // Update platform-dependent and runtime strings
+  updatePlatformUI();
+
+  if (isRunning) {
+    setRunningUI(currentRegions);
+  } else if (isStarting) {
+    setStartingUI();
+  } else {
+    setStoppedUI();
+  }
+
+  if (lastQemuData) {
+    updateQemuChecklist(lastQemuData);
+  }
+
+  const logsBadge = document.getElementById('logs-count-badge');
+  if (logsBadge) {
+    logsBadge.innerText = `${logsCount} ${t('unit_lines')}`;
+  }
+}
+
+function updateMemorySliderDisplay(val) {
+  const el = document.getElementById('val-memory');
+  if (el) el.innerText = `${val} MB`;
+}
+
+function updateSmpSliderDisplay(val) {
+  const el = document.getElementById('val-smp');
+  if (el) el.innerText = `${val} ${t('val_cores')}`;
+}
+
 // Initialization
 document.addEventListener('DOMContentLoaded', () => {
   initTheme();
+  initLanguage();
   initTabs();
   detectPlatform();
   loadSavedSettings();
@@ -109,6 +570,8 @@ function updatePlatformUI() {
   const metricBadge = document.getElementById('metric-platform-badge');
   const osLabel = document.getElementById('detected-os-label');
   const engineSelect = document.getElementById('cfg-engine-mode');
+  const engineMetric = document.getElementById('metric-engine');
+  const engineDetail = document.getElementById('metric-engine-detail');
 
   let osName = 'Desktop';
   if (platformInfo.os === 'windows') osName = 'Windows (x86_64)';
@@ -116,9 +579,17 @@ function updatePlatformUI() {
   else if (platformInfo.os === 'linux') osName = 'Linux';
   else if (platformInfo.os === 'android') osName = 'Android';
 
-  if (badge) badge.innerText = `${osName} GUI`;
+  if (badge) badge.innerText = t('platform_gui', osName);
   if (metricBadge) metricBadge.innerText = osName;
   if (osLabel) osLabel.innerText = osName;
+
+  const currentEngine = engineSelect ? engineSelect.value : 'qemu';
+  if (engineMetric) {
+    engineMetric.innerText = currentEngine === 'native' ? t('val_engine_native') : t('val_engine_qemu');
+  }
+  if (engineDetail) {
+    engineDetail.innerText = currentEngine === 'native' ? t('hint_engine_host') : t('hint_engine_vm');
+  }
 
   // On non-Linux, disable native mode
   if (engineSelect && platformInfo.os !== 'linux') {
@@ -157,10 +628,13 @@ function loadSavedSettings() {
   document.getElementById('cfg-host').value = cfg.host;
   document.getElementById('cfg-host-port').value = cfg.port;
   document.getElementById('cfg-proxy').value = cfg.proxy;
+  if (document.getElementById('cfg-engine-mode')) {
+    document.getElementById('cfg-engine-mode').value = cfg.engine || 'qemu';
+  }
   document.getElementById('cfg-memory').value = cfg.memory;
-  document.getElementById('val-memory').innerText = cfg.memory + ' MB';
+  updateMemorySliderDisplay(cfg.memory);
   document.getElementById('cfg-smp').value = cfg.smp;
-  document.getElementById('val-smp').innerText = cfg.smp + ' Cores';
+  updateSmpSliderDisplay(cfg.smp);
   document.getElementById('cfg-accel').value = cfg.accel;
   document.getElementById('cfg-log-level').value = cfg.logLevel;
   document.getElementById('auth-refresh-interval').value = cfg.refreshInterval;
@@ -189,12 +663,13 @@ function saveSettings() {
   }
 
   updateEndpointDisplay(cfg.host, cfg.port);
-  appendLog('[gui] Configuration saved successfully.', 'info');
-  alert('Settings saved!');
+  updatePlatformUI();
+  appendLog(t('log_cfg_saved'), 'info');
+  alert(t('alert_settings_saved'));
 }
 
 function resetSettings() {
-  if (confirm('Reset settings to default?')) {
+  if (confirm(t('confirm_reset_settings'))) {
     localStorage.removeItem('wl_config');
     loadSavedSettings();
   }
@@ -215,7 +690,7 @@ function updateEndpointDisplay(host, port) {
 // Service Lifecycle
 async function handleStart() {
   setStartingUI();
-  appendLog('[gui] Launching wrapper-lite service...', 'system');
+  appendLog(t('log_service_starting'), 'system');
 
   const config = {
     host: document.getElementById('cfg-host').value.trim() || '127.0.0.1',
@@ -242,18 +717,18 @@ async function handleStart() {
     });
     const data = await res.json();
     if (!res.ok) {
-      appendLog(`[error] Failed to start service: ${data.message || 'Unknown error'}`, 'error');
+      appendLog(t('log_service_start_failed', data.message || 'Unknown error'), 'error');
       setStoppedUI();
-      alert(`Start failed: ${data.message}`);
+      alert(t('alert_start_failed', data.message || 'Unknown error'));
     }
   } catch (err) {
-    appendLog(`[error] Network error when starting service: ${err.message}`, 'error');
+    appendLog(t('log_service_start_failed', err.message), 'error');
     setStoppedUI();
   }
 }
 
 async function handleStop() {
-  appendLog('[gui] Stopping wrapper-lite service...', 'system');
+  appendLog(t('log_service_stopping'), 'system');
 
   if (isAndroidApp && window.Android.stopService) {
     window.Android.stopService();
@@ -265,10 +740,10 @@ async function handleStop() {
     const res = await fetch('/api/stop', { method: 'POST' });
     if (res.ok) {
       setStoppedUI();
-      appendLog('[gui] Service stopped.', 'system');
+      appendLog(t('log_service_stopped'), 'system');
     }
   } catch (err) {
-    appendLog(`[error] Failed to stop service: ${err.message}`, 'error');
+    appendLog(t('log_service_stop_failed', err.message), 'error');
   }
 }
 
@@ -294,36 +769,39 @@ function copyServiceUrl() {
   const port = document.getElementById('cfg-host-port').value.trim() || '12340';
   const url = `http://${host}:${port}`;
   navigator.clipboard.writeText(url).then(() => {
-    alert(`Copied: ${url}`);
+    alert(t('alert_copied', url));
   });
 }
 
 // UI State Toggles
 function setRunningUI(regions = []) {
   isRunning = true;
+  isStarting = false;
+  currentRegions = regions || [];
   document.getElementById('btn-start').classList.add('hidden');
   document.getElementById('btn-stop').classList.remove('hidden');
 
   const dot = document.getElementById('status-dot');
   dot.className = 'status-dot running';
-  document.getElementById('status-text').innerText = 'Running';
+  document.getElementById('status-text').innerText = t('status_running');
 
-  document.getElementById('metric-state').innerText = 'Running';
+  document.getElementById('metric-state').innerText = t('status_running');
   const stateBadge = document.getElementById('metric-state-badge');
-  stateBadge.innerText = 'Online';
+  stateBadge.innerText = t('badge_online');
   stateBadge.className = 'badge badge-info';
 
   if (!serviceStartTime) serviceStartTime = Date.now();
   startUptimeTracker();
 
-  if (regions && regions.length > 0) {
-    document.getElementById('metric-regions').innerText = regions.join(', ');
-    document.getElementById('metric-regions-hint').innerText = `${regions.length} storefront(s) active`;
+  if (currentRegions && currentRegions.length > 0) {
+    document.getElementById('metric-regions').innerText = currentRegions.join(', ');
+    document.getElementById('metric-regions-hint').innerText = `${currentRegions.length} ${t('hint_regions_active')}`;
   }
 }
 
 function setStoppedUI() {
   isRunning = false;
+  isStarting = false;
   serviceStartTime = null;
   stopUptimeTracker();
 
@@ -332,24 +810,25 @@ function setStoppedUI() {
 
   const dot = document.getElementById('status-dot');
   dot.className = 'status-dot stopped';
-  document.getElementById('status-text').innerText = 'Stopped';
+  document.getElementById('status-text').innerText = t('status_stopped');
 
-  document.getElementById('metric-state').innerText = 'Stopped';
+  document.getElementById('metric-state').innerText = t('status_stopped');
   const stateBadge = document.getElementById('metric-state-badge');
-  stateBadge.innerText = 'Inactive';
+  stateBadge.innerText = t('badge_inactive');
   stateBadge.className = 'badge';
 
-  document.getElementById('metric-uptime').innerText = 'Uptime: 0s';
-  document.getElementById('metric-regions').innerText = 'None';
-  document.getElementById('metric-regions-hint').innerText = 'Available after successful boot';
+  document.getElementById('metric-uptime').innerText = `${t('lbl_uptime')}: 0s`;
+  document.getElementById('metric-regions').innerText = t('val_none');
+  document.getElementById('metric-regions-hint').innerText = t('hint_regions_boot');
   document.getElementById('metric-latency').innerText = '-- ms';
   document.getElementById('metric-ping-badge').innerText = '--';
 }
 
 function setStartingUI() {
+  isStarting = true;
   document.getElementById('status-dot').className = 'status-dot starting';
-  document.getElementById('status-text').innerText = 'Starting...';
-  document.getElementById('metric-state').innerText = 'Booting...';
+  document.getElementById('status-text').innerText = t('status_starting');
+  document.getElementById('metric-state').innerText = t('status_booting');
 }
 
 function startUptimeTracker() {
@@ -360,7 +839,7 @@ function startUptimeTracker() {
     const m = Math.floor(diff / 60);
     const s = diff % 60;
     const text = m > 0 ? `${m}m ${s}s` : `${s}s`;
-    document.getElementById('metric-uptime').innerText = `Uptime: ${text}`;
+    document.getElementById('metric-uptime').innerText = `${t('lbl_uptime')}: ${text}`;
   }, 1000);
 }
 
@@ -413,7 +892,7 @@ async function checkServiceHealth() {
       setRunningUI(regions);
       document.getElementById('metric-latency').innerText = `${latency} ms`;
       const pingBadge = document.getElementById('metric-ping-badge');
-      pingBadge.innerText = latency < 100 ? 'Good' : 'Normal';
+      pingBadge.innerText = latency < 100 ? t('badge_good') : t('badge_normal');
       pingBadge.className = 'badge badge-info';
     } else {
       setStartingUI();
@@ -436,14 +915,14 @@ async function handleLogin() {
   const submitBtn = document.getElementById('btn-login-submit');
 
   if (!username || !password) {
-    alert('Please enter both Apple ID and password');
+    alert(t('alert_enter_credentials'));
     return;
   }
 
   submitBtn.disabled = true;
   progressBox.classList.remove('hidden');
-  progressMsg.innerText = 'Connecting to Apple Music authentication...';
-  appendLog(`[auth] Initiating login for account ${username}...`, 'info');
+  progressMsg.innerText = t('msg_logging_in');
+  appendLog(t('log_login_initiating', username), 'info');
 
   const payload = {
     username,
@@ -466,17 +945,17 @@ async function handleLogin() {
     });
     const result = await res.json();
     if (res.ok && result.success) {
-      appendLog('[auth] Login succeeded! Decryption tokens cached.', 'run');
-      alert('Login successful! Tokens are cached.');
+      appendLog(t('log_login_succeeded'), 'run');
+      alert(t('alert_login_succeeded'));
     } else if (result.need2FA) {
       prompt2faModal();
     } else {
-      appendLog(`[error] Login failed: ${result.message || 'Authentication error'}`, 'error');
-      alert(`Login failed: ${result.message || 'Check credentials'}`);
+      appendLog(t('log_login_failed', result.message || 'Authentication error'), 'error');
+      alert(t('alert_login_failed', result.message || 'Check credentials'));
     }
   } catch (err) {
-    appendLog(`[error] Login request error: ${err.message}`, 'error');
-    alert(`Error: ${err.message}`);
+    appendLog(t('log_login_failed', err.message), 'error');
+    alert(t('alert_login_failed', err.message));
   } finally {
     submitBtn.disabled = false;
     progressBox.classList.add('hidden');
@@ -495,7 +974,7 @@ function close2faModal() {
 async function submit2faCode() {
   const code = document.getElementById('modal-2fa-input').value.trim();
   if (!code || code.length !== 6) {
-    alert('Please enter a 6-digit code');
+    alert(t('alert_enter_2fa'));
     return;
   }
   close2faModal();
@@ -525,6 +1004,8 @@ async function checkQemuPackageStatus() {
 }
 
 function updateQemuChecklist(data) {
+  if (!data) return;
+  lastQemuData = data;
   const items = [
     { id: 'launcher', ok: data.launcher, name: 'wrapper-lite-qemu' },
     { id: 'kernel', ok: data.kernel, name: 'vmlinuz-lite-qemu' },
@@ -540,12 +1021,12 @@ function updateQemuChecklist(data) {
     if (icon && detail) {
       if (item.ok) {
         icon.innerText = '✅';
-        detail.innerText = 'Present and verified';
+        detail.innerText = t('status_present_verified');
         detail.style.color = 'var(--success-color)';
       } else {
         allReady = false;
         icon.innerText = '❌';
-        detail.innerText = 'Missing - required for QEMU mode';
+        detail.innerText = t('status_missing_required');
         detail.style.color = 'var(--danger-color)';
       }
     }
@@ -570,9 +1051,9 @@ async function startDownloadQemuPackage() {
   progressCard.classList.remove('hidden');
   progressBar.style.width = '0%';
   pctText.innerText = '0%';
-  statusText.innerText = 'Connecting to nightly download server...';
+  statusText.innerText = t('status_connecting_download');
 
-  appendLog('[pkg] Starting automatic download of prebuilt QEMU all-in-one package...', 'info');
+  appendLog(t('log_pkg_downloading'), 'info');
 
   if (isAndroidApp && window.Android.downloadQemuPackage) {
     window.Android.downloadQemuPackage();
@@ -595,20 +1076,20 @@ async function startDownloadQemuPackage() {
           const pct = Math.floor(d.percent);
           progressBar.style.width = `${pct}%`;
           pctText.innerText = `${pct}%`;
-          statusText.innerText = `Downloading package (${pct}%)...`;
+          statusText.innerText = `${t('status_downloading_pkg')} (${pct}%)`;
           bytesText.innerText = `${(d.downloaded / 1048576).toFixed(1)} MB / ${(d.total / 1048576).toFixed(1)} MB`;
           speedText.innerText = `${(d.speed / 1024).toFixed(1)} KB/s`;
         } else if (d.status === 'extracting') {
           progressBar.style.width = '99%';
           pctText.innerText = '99%';
-          statusText.innerText = 'Extracting and verifying assets...';
+          statusText.innerText = t('status_extracting_pkg');
         } else if (d.status === 'done') {
           sse.close();
           progressBar.style.width = '100%';
           pctText.innerText = '100%';
-          statusText.innerText = 'Installation completed!';
+          statusText.innerText = t('status_installed_pkg');
           btn.disabled = false;
-          appendLog('[pkg] QEMU all-in-one package installed successfully!', 'run');
+          appendLog(t('log_pkg_installed'), 'run');
           setTimeout(() => {
             progressCard.classList.add('hidden');
             checkQemuPackageStatus();
@@ -617,7 +1098,7 @@ async function startDownloadQemuPackage() {
           sse.close();
           btn.disabled = false;
           statusText.innerText = `Error: ${d.message}`;
-          appendLog(`[error] QEMU download failed: ${d.message}`, 'error');
+          appendLog(t('log_pkg_failed', d.message), 'error');
         }
       } catch (e) {}
     };
@@ -629,7 +1110,7 @@ async function startDownloadQemuPackage() {
   } catch (err) {
     btn.disabled = false;
     statusText.innerText = `Download failed: ${err.message}`;
-    appendLog(`[error] Download failed: ${err.message}`, 'error');
+    appendLog(t('log_pkg_failed', err.message), 'error');
   }
 }
 
@@ -683,8 +1164,8 @@ async function executeApiTest() {
   const statusEl = document.getElementById('test-response-status');
   const bodyEl = document.getElementById('test-response-body');
 
-  statusEl.innerText = 'Requesting...';
-  bodyEl.innerText = 'Waiting for response from ' + url;
+  statusEl.innerText = t('status_requesting');
+  bodyEl.innerText = t('msg_waiting_response', url);
 
   try {
     const start = Date.now();
@@ -700,7 +1181,7 @@ async function executeApiTest() {
       bodyEl.innerHTML = `<code>${escapeHtml(text)}</code>`;
     }
   } catch (err) {
-    statusEl.innerText = 'Failed';
+    statusEl.innerText = t('status_failed');
     bodyEl.innerHTML = `<code>Error: ${escapeHtml(err.message)}\nIs wrapper-lite running on ${targetHost}:${port}?</code>`;
   }
 }
@@ -708,7 +1189,7 @@ async function executeApiTest() {
 function copyTestResponse() {
   const text = document.getElementById('test-response-body').innerText;
   navigator.clipboard.writeText(text).then(() => {
-    alert('Response copied to clipboard!');
+    alert(t('alert_response_copied'));
   });
 }
 
@@ -759,7 +1240,7 @@ function appendLog(line, forcedClass = null) {
 
   logsCount++;
   const badge = document.getElementById('logs-count-badge');
-  if (badge) badge.innerText = `${logsCount} lines`;
+  if (badge) badge.innerText = `${logsCount} ${t('unit_lines')}`;
 
   // Auto-scroll
   if (document.getElementById('chk-autoscroll').checked) {
@@ -771,14 +1252,14 @@ function clearLogs() {
   const terminal = document.getElementById('logs-terminal');
   if (terminal) terminal.innerHTML = '';
   logsCount = 0;
-  document.getElementById('logs-count-badge').innerText = '0 lines';
+  document.getElementById('logs-count-badge').innerText = `0 ${t('unit_lines')}`;
 }
 
 function copyAllLogs() {
   const terminal = document.getElementById('logs-terminal');
   if (!terminal) return;
   navigator.clipboard.writeText(terminal.innerText).then(() => {
-    alert('Logs copied to clipboard!');
+    alert(t('alert_logs_copied'));
   });
 }
 
@@ -810,19 +1291,19 @@ window.onAndroidDownloadProgress = (pct, speed, status) => {
 
   if (progressBar) progressBar.style.width = `${pct}%`;
   if (pctText) pctText.innerText = `${pct}%`;
-  if (statusText) statusText.innerText = status || 'Downloading...';
+  if (statusText) statusText.innerText = status || `${t('status_downloading_pkg')}...`;
   if (speedText) speedText.innerText = speed || '';
 
   if (pct >= 100) {
     if (btn) btn.disabled = false;
-    appendLog('[pkg] QEMU all-in-one package installed successfully!', 'run');
+    appendLog(t('log_pkg_installed'), 'run');
     setTimeout(() => {
       if (progressCard) progressCard.classList.add('hidden');
       checkQemuPackageStatus();
     }, 2000);
   } else if (status && status.startsWith('Error:')) {
     if (btn) btn.disabled = false;
-    appendLog(`[error] QEMU download failed: ${status}`, 'error');
+    appendLog(t('log_pkg_failed', status), 'error');
   }
 };
 
@@ -840,12 +1321,12 @@ window.onAndroidLoginResult = (resultJson) => {
   }
 
   if (result.success) {
-    appendLog('[auth] Login succeeded! Decryption tokens cached.', 'run');
-    alert('Login successful! Tokens are cached.');
+    appendLog(t('log_login_succeeded'), 'run');
+    alert(t('alert_login_succeeded'));
   } else if (result.need2FA) {
     prompt2faModal();
   } else {
-    appendLog(`[error] Login failed: ${result.message || 'Authentication error'}`, 'error');
-    alert(`Login failed: ${result.message || 'Check credentials'}`);
+    appendLog(t('log_login_failed', result.message || 'Authentication error'), 'error');
+    alert(t('alert_login_failed', result.message || 'Check credentials'));
   }
 };

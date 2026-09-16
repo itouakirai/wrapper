@@ -293,6 +293,43 @@ body {
   background-color: var(--bg-hover);
 }
 
+.lang-toggle-btn {
+  background: var(--bg-card);
+  border: 1px solid var(--border-color);
+  color: var(--text-primary);
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  border-radius: 20px;
+  font-size: 13px;
+  font-weight: 600;
+  transition: var(--transition);
+  line-height: 1;
+  user-select: none;
+}
+
+.lang-toggle-btn:hover {
+  border-color: var(--border-focus);
+  background-color: var(--bg-hover);
+  color: var(--text-primary);
+}
+
+.lang-toggle-btn .lang-icon {
+  display: flex;
+  align-items: center;
+  color: var(--text-secondary);
+}
+
+.lang-toggle-btn:hover .lang-icon {
+  color: var(--accent-color);
+}
+
+.lang-toggle-btn .lang-text {
+  font-family: var(--font-sans);
+}
+
 /* Tabs */
 .nav-tabs {
   display: flex;

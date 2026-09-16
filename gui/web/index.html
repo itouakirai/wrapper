@@ -21,16 +21,26 @@
         </div>
         <div class="brand-text">
           <h1>wrapper-lite</h1>
-          <span class="sub-badge" id="platform-badge">Cross-Platform GUI</span>
+          <span class="sub-badge" id="platform-badge" data-i18n="platform_badge_default">Cross-Platform GUI</span>
         </div>
       </div>
 
       <div class="header-status">
         <div class="status-indicator-pill" id="service-status-pill">
           <span class="status-dot stopped" id="status-dot"></span>
-          <span class="status-text" id="status-text">Stopped</span>
+          <span class="status-text" id="status-text" data-i18n="status_stopped">Stopped</span>
         </div>
-        <button class="icon-btn" id="theme-toggle-btn" title="Toggle Theme" aria-label="Toggle Theme">
+        <button class="lang-toggle-btn" id="lang-toggle-btn" onclick="toggleLanguage()" title="Switch Language / 切换语言" aria-label="Switch Language" data-i18n-title="btn_lang_toggle">
+          <span class="lang-icon">
+            <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <circle cx="12" cy="12" r="10"></circle>
+              <line x1="2" y1="12" x2="22" y2="12"></line>
+              <path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"></path>
+            </svg>
+          </span>
+          <span class="lang-text" id="lang-text-label">中文</span>
+        </button>
+        <button class="icon-btn" id="theme-toggle-btn" title="Toggle Theme" aria-label="Toggle Theme" data-i18n-title="btn_theme_toggle">
           <svg id="moon-icon" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2">
             <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path>
           </svg>
@@ -56,13 +66,13 @@
           <svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor">
             <polygon points="5 3 19 12 5 21 5 3"></polygon>
           </svg>
-          <span>Start Service</span>
+          <span data-i18n="btn_start">Start Service</span>
         </button>
         <button class="btn btn-danger hidden" id="btn-stop" onclick="handleStop()">
           <svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor">
             <rect x="6" y="6" width="12" height="12"></rect>
           </svg>
-          <span>Stop Service</span>
+          <span data-i18n="btn_stop">Stop Service</span>
         </button>
         <button class="btn btn-secondary" id="btn-restart" onclick="handleRestart()">
           <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2">
@@ -70,7 +80,7 @@
             <polyline points="1 20 1 14 7 14"></polyline>
             <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path>
           </svg>
-          <span>Restart</span>
+          <span data-i18n="btn_restart">Restart</span>
         </button>
         <button class="btn btn-ghost" id="btn-open-browser" onclick="openServiceUrl()">
           <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2">
@@ -78,14 +88,14 @@
             <polyline points="15 3 21 3 21 9"></polyline>
             <line x1="10" y1="14" x2="21" y2="3"></line>
           </svg>
-          <span>Open API</span>
+          <span data-i18n="btn_open_browser">Open API</span>
         </button>
       </div>
 
       <div class="service-url-box">
-        <span class="url-label">Endpoint:</span>
+        <span class="url-label" data-i18n="lbl_endpoint">Endpoint:</span>
         <code id="display-service-url">http://127.0.0.1:12340</code>
-        <button class="icon-btn-small" onclick="copyServiceUrl()" title="Copy URL">
+        <button class="icon-btn-small" onclick="copyServiceUrl()" title="Copy URL" data-i18n-title="btn_copy_url">
           <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2">
             <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
             <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
@@ -96,12 +106,12 @@
 
     <!-- Navigation Tabs -->
     <nav class="nav-tabs">
-      <button class="tab-btn active" data-tab="dashboard">Dashboard</button>
-      <button class="tab-btn" data-tab="config">Settings</button>
-      <button class="tab-btn" data-tab="account">Account &amp; Auth</button>
-      <button class="tab-btn" data-tab="qemu">QEMU Package</button>
-      <button class="tab-btn" data-tab="tester">API Tester</button>
-      <button class="tab-btn" data-tab="logs">Live Logs</button>
+      <button class="tab-btn active" data-tab="dashboard" data-i18n="tab_dashboard">Dashboard</button>
+      <button class="tab-btn" data-tab="config" data-i18n="tab_settings">Settings</button>
+      <button class="tab-btn" data-tab="account" data-i18n="tab_account">Account &amp; Auth</button>
+      <button class="tab-btn" data-tab="qemu" data-i18n="tab_qemu">QEMU Package</button>
+      <button class="tab-btn" data-tab="tester" data-i18n="tab_tester">API Tester</button>
+      <button class="tab-btn" data-tab="logs" data-i18n="tab_logs">Live Logs</button>
     </nav>
 
     <!-- Main Content Area -->
@@ -112,38 +122,38 @@
         <div class="metrics-grid">
           <div class="metric-card card">
             <div class="metric-header">
-              <span class="metric-title">Service State</span>
-              <span class="badge" id="metric-state-badge">Inactive</span>
+              <span class="metric-title" data-i18n="metric_service_state">Service State</span>
+              <span class="badge" id="metric-state-badge" data-i18n="badge_inactive">Inactive</span>
             </div>
-            <div class="metric-value" id="metric-state">Stopped</div>
+            <div class="metric-value" id="metric-state" data-i18n="status_stopped">Stopped</div>
             <div class="metric-hint" id="metric-uptime">Uptime: 0s</div>
           </div>
 
           <div class="metric-card card">
             <div class="metric-header">
-              <span class="metric-title">Storefront Regions</span>
+              <span class="metric-title" data-i18n="metric_storefront_regions">Storefront Regions</span>
               <span class="badge badge-info">Apple Music</span>
             </div>
-            <div class="metric-value regions-list" id="metric-regions">None</div>
-            <div class="metric-hint" id="metric-regions-hint">Available after successful boot</div>
+            <div class="metric-value regions-list" id="metric-regions" data-i18n="val_none">None</div>
+            <div class="metric-hint" id="metric-regions-hint" data-i18n="hint_regions_boot">Available after successful boot</div>
           </div>
 
           <div class="metric-card card">
             <div class="metric-header">
-              <span class="metric-title">Active Platform</span>
-              <span class="badge" id="metric-platform-badge">Detecting...</span>
+              <span class="metric-title" data-i18n="metric_active_platform">Active Platform</span>
+              <span class="badge" id="metric-platform-badge" data-i18n="badge_detecting">Detecting...</span>
             </div>
-            <div class="metric-value" id="metric-engine">QEMU Guest</div>
-            <div class="metric-hint" id="metric-engine-detail">Self-contained VM</div>
+            <div class="metric-value" id="metric-engine" data-i18n="val_engine_qemu">QEMU Guest</div>
+            <div class="metric-hint" id="metric-engine-detail" data-i18n="hint_engine_vm">Self-contained VM</div>
           </div>
 
           <div class="metric-card card">
             <div class="metric-header">
-              <span class="metric-title">API Latency</span>
+              <span class="metric-title" data-i18n="metric_api_latency">API Latency</span>
               <span class="badge" id="metric-ping-badge">--</span>
             </div>
             <div class="metric-value" id="metric-latency">-- ms</div>
-            <div class="metric-hint">Health check /status</div>
+            <div class="metric-hint" data-i18n="hint_health_check">Health check /status</div>
           </div>
         </div>
 
@@ -151,55 +161,55 @@
         <div id="qemu-missing-alert" class="alert-box alert-warning hidden">
           <div class="alert-icon">⚠️</div>
           <div class="alert-content">
-            <h4>Prebuilt QEMU Package Not Installed</h4>
-            <p>Non-Linux platforms require the precompiled QEMU all-in-one package to run. You can download and install it automatically with one click.</p>
+            <h4 data-i18n="alert_qemu_missing_title">Prebuilt QEMU Package Not Installed</h4>
+            <p data-i18n="alert_qemu_missing_desc">Non-Linux platforms require the precompiled QEMU all-in-one package to run. You can download and install it automatically with one click.</p>
           </div>
-          <button class="btn btn-warning btn-sm" onclick="switchToTab('qemu')">Download Package</button>
+          <button class="btn btn-warning btn-sm" onclick="switchToTab('qemu')" data-i18n="btn_download_pkg">Download Package</button>
         </div>
 
         <!-- Quick Endpoints Overview -->
         <div class="card card-section">
-          <h3>Quick Endpoints Reference</h3>
+          <h3 data-i18n="title_endpoints_ref">Quick Endpoints Reference</h3>
           <div class="endpoints-table-wrap">
             <table class="endpoints-table">
               <thead>
                 <tr>
-                  <th>Method</th>
-                  <th>Endpoint</th>
-                  <th>Description</th>
-                  <th>Action</th>
+                  <th data-i18n="th_method">Method</th>
+                  <th data-i18n="th_endpoint">Endpoint</th>
+                  <th data-i18n="th_description">Description</th>
+                  <th data-i18n="th_action">Action</th>
                 </tr>
               </thead>
               <tbody>
                 <tr>
                   <td><span class="badge-get">GET</span></td>
                   <td><code>/status</code></td>
-                  <td>Health check and supported storefront regions</td>
-                  <td><button class="btn btn-xs" onclick="quickTest('/status')">Test</button></td>
+                  <td data-i18n="ep_status_desc">Health check and supported storefront regions</td>
+                  <td><button class="btn btn-xs" onclick="quickTest('/status')" data-i18n="btn_test">Test</button></td>
                 </tr>
                 <tr>
                   <td><span class="badge-get">GET</span></td>
                   <td><code>/m3u8?adamId={id}</code></td>
-                  <td>Fetch song M3U8 playback stream</td>
-                  <td><button class="btn btn-xs" onclick="openTesterWithEndpoint('/m3u8')">Try</button></td>
+                  <td data-i18n="ep_m3u8_desc">Fetch song M3U8 playback stream</td>
+                  <td><button class="btn btn-xs" onclick="openTesterWithEndpoint('/m3u8')" data-i18n="btn_try">Try</button></td>
                 </tr>
                 <tr>
                   <td><span class="badge-get">GET</span></td>
                   <td><code>/key?adamId={id}&amp;uri={uri}</code></td>
-                  <td>Fetch track decryption key</td>
-                  <td><button class="btn btn-xs" onclick="openTesterWithEndpoint('/key')">Try</button></td>
+                  <td data-i18n="ep_key_desc">Fetch track decryption key</td>
+                  <td><button class="btn btn-xs" onclick="openTesterWithEndpoint('/key')" data-i18n="btn_try">Try</button></td>
                 </tr>
                 <tr>
                   <td><span class="badge-get">GET</span></td>
                   <td><code>/lyrics?adamId={id}</code></td>
-                  <td>Fetch lyrics (syllable / line-timed)</td>
-                  <td><button class="btn btn-xs" onclick="openTesterWithEndpoint('/lyrics')">Try</button></td>
+                  <td data-i18n="ep_lyrics_desc">Fetch lyrics (syllable / line-timed)</td>
+                  <td><button class="btn btn-xs" onclick="openTesterWithEndpoint('/lyrics')" data-i18n="btn_try">Try</button></td>
                 </tr>
                 <tr>
                   <td><span class="badge-get">GET</span></td>
                   <td><code>/webplayback?adamId={id}</code></td>
-                  <td>Fetch web playback tokens</td>
-                  <td><button class="btn btn-xs" onclick="openTesterWithEndpoint('/webplayback')">Try</button></td>
+                  <td data-i18n="ep_webplayback_desc">Fetch web playback tokens</td>
+                  <td><button class="btn btn-xs" onclick="openTesterWithEndpoint('/webplayback')" data-i18n="btn_try">Try</button></td>
                 </tr>
               </tbody>
             </table>
@@ -211,74 +221,74 @@
       <section id="tab-config" class="tab-pane">
         <div class="config-grid">
           <div class="card">
-            <h3>Network &amp; Binding</h3>
+            <h3 data-i18n="title_network_binding">Network &amp; Binding</h3>
             <div class="form-group">
-              <label for="cfg-host">Host Listen Address</label>
+              <label for="cfg-host" data-i18n="lbl_host_address">Host Listen Address</label>
               <div class="input-with-presets">
-                <input type="text" id="cfg-host" value="127.0.0.1" placeholder="127.0.0.1 or 0.0.0.0">
+                <input type="text" id="cfg-host" value="127.0.0.1" placeholder="127.0.0.1 or 0.0.0.0" data-i18n-placeholder="ph_host_address">
                 <div class="chip-group">
-                  <button type="button" class="chip" onclick="setHostPreset('127.0.0.1')">Local (127.0.0.1)</button>
-                  <button type="button" class="chip" onclick="setHostPreset('0.0.0.0')">LAN (0.0.0.0)</button>
+                  <button type="button" class="chip" onclick="setHostPreset('127.0.0.1')" data-i18n="btn_preset_local">Local (127.0.0.1)</button>
+                  <button type="button" class="chip" onclick="setHostPreset('0.0.0.0')" data-i18n="btn_preset_lan">LAN (0.0.0.0)</button>
                 </div>
               </div>
-              <small class="form-hint">Set to 0.0.0.0 to expose the service to other devices on your local network.</small>
+              <small class="form-hint" data-i18n="hint_host_address">Set to 0.0.0.0 to expose the service to other devices on your local network.</small>
             </div>
 
             <div class="form-group">
-              <label for="cfg-host-port">Host Listen Port</label>
+              <label for="cfg-host-port" data-i18n="lbl_host_port">Host Listen Port</label>
               <input type="number" id="cfg-host-port" value="12340" min="1024" max="65535">
-              <small class="form-hint">The port you connect to on this device (default: 12340).</small>
+              <small class="form-hint" data-i18n="hint_host_port">The port you connect to on this device (default: 12340).</small>
             </div>
 
             <div class="form-group">
-              <label for="cfg-proxy">HTTP / SOCKS5 Proxy (Optional)</label>
-              <input type="text" id="cfg-proxy" placeholder="e.g. http://127.0.0.1:7890 or socks5://127.0.0.1:1080">
-              <small class="form-hint">Forward requests through a proxy for region unlocking.</small>
+              <label for="cfg-proxy" data-i18n="lbl_proxy">HTTP / SOCKS5 Proxy (Optional)</label>
+              <input type="text" id="cfg-proxy" placeholder="e.g. http://127.0.0.1:7890 or socks5://127.0.0.1:1080" data-i18n-placeholder="ph_proxy">
+              <small class="form-hint" data-i18n="hint_proxy">Forward requests through a proxy for region unlocking.</small>
             </div>
           </div>
 
           <div class="card">
-            <h3>QEMU &amp; Performance</h3>
+            <h3 data-i18n="title_qemu_perf">QEMU &amp; Performance</h3>
             <div class="form-group" id="group-engine-mode">
-              <label for="cfg-engine-mode">Runtime Mode</label>
+              <label for="cfg-engine-mode" data-i18n="lbl_runtime_mode">Runtime Mode</label>
               <select id="cfg-engine-mode">
-                <option value="qemu" selected>QEMU Virtual Guest (Recommended for Windows/macOS/Android)</option>
-                <option value="native">Native Rootless (Linux Only)</option>
+                <option value="qemu" selected data-i18n="opt_engine_qemu">QEMU Virtual Guest (Recommended for Windows/macOS/Android)</option>
+                <option value="native" data-i18n="opt_engine_native">Native Rootless (Linux Only)</option>
               </select>
-              <small class="form-hint">Non-Linux platforms require QEMU mode.</small>
+              <small class="form-hint" data-i18n="hint_engine_mode">Non-Linux platforms require QEMU mode.</small>
             </div>
 
             <div class="form-group">
-              <label for="cfg-memory">Guest RAM (MB)</label>
+              <label for="cfg-memory" data-i18n="lbl_guest_ram">Guest RAM (MB)</label>
               <div class="slider-group">
-                <input type="range" id="cfg-memory" min="256" max="2048" step="64" value="512" oninput="document.getElementById('val-memory').innerText = this.value + ' MB'">
+                <input type="range" id="cfg-memory" min="256" max="2048" step="64" value="512" oninput="updateMemorySliderDisplay(this.value)">
                 <span id="val-memory" class="slider-val">512 MB</span>
               </div>
-              <small class="form-hint">Allocated RAM for QEMU guest (512MB is optimal).</small>
+              <small class="form-hint" data-i18n="hint_guest_ram">Allocated RAM for QEMU guest (512MB is optimal).</small>
             </div>
 
             <div class="form-group">
-              <label for="cfg-smp">Guest CPU Cores (SMP)</label>
+              <label for="cfg-smp" data-i18n="lbl_guest_cpu">Guest CPU Cores (SMP)</label>
               <div class="slider-group">
-                <input type="range" id="cfg-smp" min="1" max="8" step="1" value="2" oninput="document.getElementById('val-smp').innerText = this.value + ' Cores'">
+                <input type="range" id="cfg-smp" min="1" max="8" step="1" value="2" oninput="updateSmpSliderDisplay(this.value)">
                 <span id="val-smp" class="slider-val">2 Cores</span>
               </div>
             </div>
 
             <div class="form-group">
-              <label for="cfg-accel">Hardware Acceleration</label>
+              <label for="cfg-accel" data-i18n="lbl_accel">Hardware Acceleration</label>
               <select id="cfg-accel">
-                <option value="auto" selected>Auto (Recommended)</option>
-                <option value="whpx">WHPX (Windows Hypervisor Platform)</option>
-                <option value="kvm">KVM (Linux Kernel Virtual Machine)</option>
-                <option value="hvf">HVF (macOS Hypervisor)</option>
-                <option value="tcg">TCG (Software Emulation / Android Fallback)</option>
+                <option value="auto" selected data-i18n="opt_accel_auto">Auto (Recommended)</option>
+                <option value="whpx" data-i18n="opt_accel_whpx">WHPX (Windows Hypervisor Platform)</option>
+                <option value="kvm" data-i18n="opt_accel_kvm">KVM (Linux Kernel Virtual Machine)</option>
+                <option value="hvf" data-i18n="opt_accel_hvf">HVF (macOS Hypervisor)</option>
+                <option value="tcg" data-i18n="opt_accel_tcg">TCG (Software Emulation / Android Fallback)</option>
               </select>
-              <small class="form-hint">Falls back automatically to TCG software emulation if acceleration fails.</small>
+              <small class="form-hint" data-i18n="hint_accel">Falls back automatically to TCG software emulation if acceleration fails.</small>
             </div>
 
             <div class="form-group">
-              <label for="cfg-log-level">Log Level</label>
+              <label for="cfg-log-level" data-i18n="lbl_log_level">Log Level</label>
               <select id="cfg-log-level">
                 <option value="info" selected>Info</option>
                 <option value="debug">Debug</option>
@@ -290,45 +300,45 @@
         </div>
 
         <div class="card card-actions">
-          <button class="btn btn-primary" onclick="saveSettings()">Save Configuration</button>
-          <button class="btn btn-ghost" onclick="resetSettings()">Reset to Defaults</button>
+          <button class="btn btn-primary" onclick="saveSettings()" data-i18n="btn_save_cfg">Save Configuration</button>
+          <button class="btn btn-ghost" onclick="resetSettings()" data-i18n="btn_reset_cfg">Reset to Defaults</button>
         </div>
       </section>
 
       <!-- Tab 3: Account & Auth -->
       <section id="tab-account" class="tab-pane">
         <div class="card max-w-700">
-          <h3>Apple Music Account Authentication</h3>
-          <p class="section-desc">
+          <h3 data-i18n="title_auth">Apple Music Account Authentication</h3>
+          <p class="section-desc" data-i18n="desc_auth">
             Logging in caches decryption keys and tokens to <code>data.img</code> (or native data dir). Once tokens are cached, wrapper-lite can run in service mode without re-entering passwords.
           </p>
 
           <form id="login-form" onsubmit="event.preventDefault(); handleLogin();">
             <div class="form-group">
-              <label for="auth-username">Apple ID (Email)</label>
-              <input type="text" id="auth-username" placeholder="name@example.com" required autocomplete="username">
+              <label for="auth-username" data-i18n="lbl_apple_id">Apple ID (Email)</label>
+              <input type="text" id="auth-username" placeholder="name@example.com" data-i18n-placeholder="ph_apple_id" required autocomplete="username">
             </div>
 
             <div class="form-group">
-              <label for="auth-password">Password</label>
+              <label for="auth-password" data-i18n="lbl_password">Password</label>
               <input type="password" id="auth-password" placeholder="••••••••" required autocomplete="current-password">
             </div>
 
             <div class="form-group">
-              <label for="auth-2fa">2FA Verification Code (Optional)</label>
-              <input type="text" id="auth-2fa" placeholder="6-digit code (if prompted on your device)" maxlength="6" pattern="[0-9]{6}">
-              <small class="form-hint">If your Apple ID has 2-Step Verification enabled, you can enter the 6-digit code directly here or input it when prompted.</small>
+              <label for="auth-2fa" data-i18n="lbl_2fa">2FA Verification Code (Optional)</label>
+              <input type="text" id="auth-2fa" placeholder="6-digit code (if prompted on your device)" data-i18n-placeholder="ph_2fa" maxlength="6" pattern="[0-9]{6}">
+              <small class="form-hint" data-i18n="hint_2fa">If your Apple ID has 2-Step Verification enabled, you can enter the 6-digit code directly here or input it when prompted.</small>
             </div>
 
             <div class="form-group">
-              <label for="auth-refresh-interval">Token Auto-Refresh Interval (Seconds)</label>
+              <label for="auth-refresh-interval" data-i18n="lbl_refresh_interval">Token Auto-Refresh Interval (Seconds)</label>
               <input type="number" id="auth-refresh-interval" value="1800" min="300" max="86400">
-              <small class="form-hint">How often background token refreshing runs (default: 1800s / 30m).</small>
+              <small class="form-hint" data-i18n="hint_refresh_interval">How often background token refreshing runs (default: 1800s / 30m).</small>
             </div>
 
             <div class="form-group">
-              <label for="auth-device-info">Custom Device Info Override (Optional)</label>
-              <input type="text" id="auth-device-info" placeholder="Leave blank to use auto-generated device identity">
+              <label for="auth-device-info" data-i18n="lbl_device_info">Custom Device Info Override (Optional)</label>
+              <input type="text" id="auth-device-info" placeholder="Leave blank to use auto-generated device identity" data-i18n-placeholder="ph_device_info">
             </div>
 
             <div class="form-actions">
@@ -338,14 +348,14 @@
                   <polyline points="10 17 15 12 10 7"></polyline>
                   <line x1="15" y1="12" x2="3" y2="12"></line>
                 </svg>
-                <span>Login &amp; Cache Tokens</span>
+                <span data-i18n="btn_login">Login &amp; Cache Tokens</span>
               </button>
             </div>
           </form>
 
           <div id="login-progress-box" class="login-progress hidden">
             <div class="spinner"></div>
-            <span id="login-progress-msg">Logging in to Apple Music services...</span>
+            <span id="login-progress-msg" data-i18n="msg_logging_in">Logging in to Apple Music services...</span>
           </div>
         </div>
       </section>
@@ -355,12 +365,12 @@
         <div class="card max-w-800">
           <div class="section-title-row">
             <div>
-              <h3>Precompiled QEMU All-in-One Package</h3>
-              <p class="section-desc">
+              <h3 data-i18n="title_qemu_pkg">Precompiled QEMU All-in-One Package</h3>
+              <p class="section-desc" data-i18n="desc_qemu_pkg">
                 The QEMU all-in-one package includes QEMU system binaries, kernel (<code>vmlinuz-lite-qemu</code>), rootfs/initramfs (<code>lite-initramfs.cpio.gz</code>), and preconfigured data disk (<code>data.img</code>).
               </p>
             </div>
-            <button class="btn btn-secondary btn-sm" onclick="checkQemuPackageStatus()">Check Status</button>
+            <button class="btn btn-secondary btn-sm" onclick="checkQemuPackageStatus()" data-i18n="btn_check_status">Check Status</button>
           </div>
 
           <!-- Files Checklist -->
@@ -368,40 +378,40 @@
             <div class="qemu-file-item" id="chk-launcher">
               <span class="file-icon" id="icon-launcher">⏳</span>
               <div class="file-info">
-                <span class="file-name">Launcher (wrapper-lite-qemu)</span>
-                <span class="file-detail" id="detail-launcher">Checking...</span>
+                <span class="file-name" data-i18n="chk_launcher">Launcher (wrapper-lite-qemu)</span>
+                <span class="file-detail" id="detail-launcher" data-i18n="status_checking">Checking...</span>
               </div>
             </div>
 
             <div class="qemu-file-item" id="chk-kernel">
               <span class="file-icon" id="icon-kernel">⏳</span>
               <div class="file-info">
-                <span class="file-name">Kernel (vmlinuz-lite-qemu)</span>
-                <span class="file-detail" id="detail-kernel">Checking...</span>
+                <span class="file-name" data-i18n="chk_kernel">Kernel (vmlinuz-lite-qemu)</span>
+                <span class="file-detail" id="detail-kernel" data-i18n="status_checking">Checking...</span>
               </div>
             </div>
 
             <div class="qemu-file-item" id="chk-initramfs">
               <span class="file-icon" id="icon-initramfs">⏳</span>
               <div class="file-info">
-                <span class="file-name">Initramfs (lite-initramfs.cpio.gz)</span>
-                <span class="file-detail" id="detail-initramfs">Checking...</span>
+                <span class="file-name" data-i18n="chk_initramfs">Initramfs (lite-initramfs.cpio.gz)</span>
+                <span class="file-detail" id="detail-initramfs" data-i18n="status_checking">Checking...</span>
               </div>
             </div>
 
             <div class="qemu-file-item" id="chk-disk">
               <span class="file-icon" id="icon-disk">⏳</span>
               <div class="file-info">
-                <span class="file-name">Data Disk (data.img)</span>
-                <span class="file-detail" id="detail-disk">Checking...</span>
+                <span class="file-name" data-i18n="chk_disk">Data Disk (data.img)</span>
+                <span class="file-detail" id="detail-disk" data-i18n="status_checking">Checking...</span>
               </div>
             </div>
 
             <div class="qemu-file-item" id="chk-qemubin">
               <span class="file-icon" id="icon-qemubin">⏳</span>
               <div class="file-info">
-                <span class="file-name">QEMU Binary &amp; Firmware (qemu/bin)</span>
-                <span class="file-detail" id="detail-qemubin">Checking...</span>
+                <span class="file-name" data-i18n="chk_qemubin">QEMU Binary &amp; Firmware (qemu/bin)</span>
+                <span class="file-detail" id="detail-qemubin" data-i18n="status_checking">Checking...</span>
               </div>
             </div>
           </div>
@@ -409,10 +419,10 @@
           <!-- Download / Update Card -->
           <div class="download-box card">
             <div class="download-info">
-              <h4>Direct Download from CI Nightly Builds</h4>
-              <p>Download the official prebuilt release archive for <strong id="detected-os-label">your platform</strong> directly from the nightly builds repository.</p>
+              <h4 data-i18n="title_ci_download">Direct Download from CI Nightly Builds</h4>
+              <p><span data-i18n="desc_ci_download_pre">Download the official prebuilt release archive for </span><strong id="detected-os-label">your platform</strong><span data-i18n="desc_ci_download_post"> directly from the nightly builds repository.</span></p>
               <div class="source-link">
-                Source: <a href="https://nightly.link/itouakirai/wrapper/workflows/build-lite/lite?preview" target="_blank" rel="noopener">nightly.link/itouakirai/wrapper</a>
+                <span data-i18n="lbl_source">Source:</span> <a href="https://nightly.link/itouakirai/wrapper/workflows/build-lite/lite?preview" target="_blank" rel="noopener">nightly.link/itouakirai/wrapper</a>
               </div>
             </div>
             
@@ -423,7 +433,7 @@
                   <polyline points="7 10 12 15 17 10"></polyline>
                   <line x1="12" y1="15" x2="12" y2="3"></line>
                 </svg>
-                <span>Download / Update QEMU Package</span>
+                <span data-i18n="btn_download_update_qemu">Download / Update QEMU Package</span>
               </button>
             </div>
           </div>
@@ -431,7 +441,7 @@
           <!-- Download Progress Bar (shown during download) -->
           <div id="qemu-download-progress-card" class="card hidden">
             <div class="progress-header">
-              <span id="qemu-download-status-text">Downloading package...</span>
+              <span id="qemu-download-status-text" data-i18n="status_downloading_pkg">Downloading package...</span>
               <span id="qemu-download-pct">0%</span>
             </div>
             <div class="progress-bar-bg">
@@ -448,23 +458,23 @@
       <!-- Tab 5: API Tester -->
       <section id="tab-tester" class="tab-pane">
         <div class="card max-w-800">
-          <h3>API Test Bench</h3>
-          <p class="section-desc">Quickly test Apple Music decryption and metadata endpoints against the running wrapper instance.</p>
+          <h3 data-i18n="title_api_tester">API Test Bench</h3>
+          <p class="section-desc" data-i18n="desc_api_tester">Quickly test Apple Music decryption and metadata endpoints against the running wrapper instance.</p>
 
           <div class="tester-controls">
             <div class="form-group">
-              <label for="test-endpoint-select">Endpoint</label>
+              <label for="test-endpoint-select" data-i18n="lbl_tester_ep">Endpoint</label>
               <select id="test-endpoint-select" onchange="handleTesterEndpointChange()">
-                <option value="/status">GET /status (Health &amp; Storefronts)</option>
-                <option value="/m3u8">GET /m3u8 (HLS Playback Stream)</option>
-                <option value="/lyrics">GET /lyrics (Time-synced Lyrics)</option>
-                <option value="/key">GET /key (Track Key)</option>
-                <option value="/webplayback">GET /webplayback (Web Playback)</option>
+                <option value="/status" data-i18n="opt_ep_status">GET /status (Health &amp; Storefronts)</option>
+                <option value="/m3u8" data-i18n="opt_ep_m3u8">GET /m3u8 (HLS Playback Stream)</option>
+                <option value="/lyrics" data-i18n="opt_ep_lyrics">GET /lyrics (Time-synced Lyrics)</option>
+                <option value="/key" data-i18n="opt_ep_key">GET /key (Track Key)</option>
+                <option value="/webplayback" data-i18n="opt_ep_webplayback">GET /webplayback (Web Playback)</option>
               </select>
             </div>
 
             <div class="form-group" id="test-adamid-group">
-              <label for="test-adamid">Adam ID (Song / Track ID)</label>
+              <label for="test-adamid" data-i18n="lbl_adam_id">Adam ID (Song / Track ID)</label>
               <div class="input-with-presets">
                 <input type="text" id="test-adamid" value="1440784263" placeholder="e.g. 1440784263">
                 <div class="chip-group">
@@ -475,7 +485,7 @@
             </div>
 
             <div class="form-group hidden" id="test-uri-group">
-              <label for="test-uri">Key URI</label>
+              <label for="test-uri" data-i18n="lbl_key_uri">Key URI</label>
               <input type="text" id="test-uri" placeholder="skd://itunes.apple.com/...">
             </div>
 
@@ -483,22 +493,22 @@
               <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2">
                 <polygon points="5 3 19 12 5 21 5 3"></polygon>
               </svg>
-              <span>Send Request</span>
+              <span data-i18n="btn_send_request">Send Request</span>
             </button>
           </div>
 
           <!-- Response output -->
           <div class="test-response-wrap">
             <div class="test-response-header">
-              <span>Response: <strong id="test-response-status">--</strong></span>
-              <button class="icon-btn-small" onclick="copyTestResponse()" title="Copy Response">
+              <span><span data-i18n="lbl_response">Response:</span> <strong id="test-response-status">--</strong></span>
+              <button class="icon-btn-small" onclick="copyTestResponse()" title="Copy Response" data-i18n-title="btn_copy_response">
                 <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2">
                   <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
                   <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
                 </svg>
               </button>
             </div>
-            <pre id="test-response-body"><code>Click "Send Request" to test endpoint...</code></pre>
+            <pre id="test-response-body"><code data-i18n="ph_response_waiting">Click "Send Request" to test endpoint...</code></pre>
           </div>
         </div>
       </section>
@@ -508,20 +518,20 @@
         <div class="card full-height">
           <div class="logs-toolbar">
             <div class="logs-toolbar-left">
-              <h3>Live Console Output</h3>
+              <h3 data-i18n="title_live_logs">Live Console Output</h3>
               <span class="badge" id="logs-count-badge">0 lines</span>
             </div>
             <div class="logs-toolbar-right">
               <label class="checkbox-label">
                 <input type="checkbox" id="chk-autoscroll" checked>
-                <span>Auto-scroll</span>
+                <span data-i18n="lbl_autoscroll">Auto-scroll</span>
               </label>
-              <button class="btn btn-xs btn-ghost" onclick="clearLogs()">Clear</button>
-              <button class="btn btn-xs btn-ghost" onclick="copyAllLogs()">Copy All</button>
+              <button class="btn btn-xs btn-ghost" onclick="clearLogs()" data-i18n="btn_clear_logs">Clear</button>
+              <button class="btn btn-xs btn-ghost" onclick="copyAllLogs()" data-i18n="btn_copy_logs">Copy All</button>
             </div>
           </div>
           <div id="logs-terminal" class="terminal-view">
-            <div class="log-line log-system">[gui] wrapper-lite GUI initialized.</div>
+            <div class="log-line log-system" id="initial-log-line" data-i18n="log_initialized">[gui] wrapper-lite GUI initialized.</div>
           </div>
         </div>
       </section>
@@ -532,19 +542,19 @@
     <div id="modal-2fa" class="modal-overlay hidden">
       <div class="modal-dialog">
         <div class="modal-header">
-          <h3>Two-Factor Authentication</h3>
+          <h3 data-i18n="title_2fa_modal">Two-Factor Authentication</h3>
           <button class="modal-close" onclick="close2faModal()">&times;</button>
         </div>
         <div class="modal-body">
-          <p>Apple Music requires a 6-digit 2FA verification code sent to your Apple trusted devices.</p>
+          <p data-i18n="desc_2fa_modal">Apple Music requires a 6-digit 2FA verification code sent to your Apple trusted devices.</p>
           <div class="form-group">
-            <label for="modal-2fa-input">Enter 6-digit Code:</label>
+            <label for="modal-2fa-input" data-i18n="lbl_enter_code">Enter 6-digit Code:</label>
             <input type="text" id="modal-2fa-input" class="text-center font-code text-lg" maxlength="6" placeholder="123456" autofocus>
           </div>
         </div>
         <div class="modal-footer">
-          <button class="btn btn-ghost" onclick="close2faModal()">Cancel</button>
-          <button class="btn btn-primary" onclick="submit2faCode()">Submit Code</button>
+          <button class="btn btn-ghost" onclick="close2faModal()" data-i18n="btn_cancel">Cancel</button>
+          <button class="btn btn-primary" onclick="submit2faCode()" data-i18n="btn_submit_code">Submit Code</button>
         </div>
       </div>
     </div>
