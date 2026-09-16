@@ -268,6 +268,10 @@ class QemuRunner(private val context: Context, private val assetManager: QemuAss
                 return Pair(false, "2FA")
             }
             if (exitCode == 0 && (fullOutput.contains("login successful") || fullOutput.contains("login complete") || fullOutput.contains("Tokens cached"))) {
+                try {
+                    File(context.filesDir, ".login_cached").writeText(System.currentTimeMillis().toString())
+                    File(assetManager.qemuDir, ".login_cached").writeText(System.currentTimeMillis().toString())
+                } catch (e: Exception) {}
                 return Pair(true, "Login successful! Decryption tokens cached.")
             } else {
                 return Pair(false, "Login exited with code $exitCode. Check credentials and logs.")

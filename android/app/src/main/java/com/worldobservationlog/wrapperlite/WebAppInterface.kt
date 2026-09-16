@@ -29,17 +29,127 @@ class WebAppInterface(
 
     @JavascriptInterface
     fun hasLoginCache(): Boolean {
-        val qemuDir = java.io.File(context.filesDir, "qemu")
-        if (java.io.File(context.filesDir, ".login_cached").exists() || java.io.File(qemuDir, ".login_cached").exists()) {
+        val qemuDir = File(context.filesDir, "qemu")
+
+        // 1. Check marker file
+        val markerFiles = listOf(
+            File(context.filesDir, ".login_cached"),
+            File(qemuDir, ".login_cached")
+        )
+        if (markerFiles.any { it.exists() }) {
             return true
         }
+
+        // 2. Check loose token files on host filesystem
         val tokenFiles = listOf(
-            java.io.File(context.filesDir, "token_cache.json"),
-            java.io.File(context.filesDir, "DEV_TOKEN"),
-            java.io.File(context.filesDir, "MUSIC_TOKEN"),
-            java.io.File(qemuDir, "token_cache.json")
+            File(context.filesDir, "token_cache.json"),
+            File(context.filesDir, "DEV_TOKEN"),
+            File(context.filesDir, "MUSIC_TOKEN"),
+            File(context.filesDir, "STOREFRONT_ID"),
+            File(qemuDir, "token_cache.json"),
+            File(qemuDir, "DEV_TOKEN"),
+            File(qemuDir, "MUSIC_TOKEN"),
+            File(qemuDir, "STOREFRONT_ID"),
+            File(File(context.filesDir, "rootfs/data"), "token_cache.json"),
+            File(File(context.filesDir, "rootfs/data"), "kvs.sqlitedb")
         )
-        return tokenFiles.any { it.exists() }
+        if (tokenFiles.any { it.exists() }) {
+            markLoginCached()
+            return true
+        }
+
+        // 3. Check QEMU data disk image (ext4 partition containing tokens)
+        val diskCandidates = mutableListOf(
+            File(qemuDir, "data.img"),
+            File(context.filesDir, "data.img")
+        )
+        serviceProvider()?.assetManager?.getDataDisk()?.let {
+            if (!diskCandidates.contains(it)) diskCandidates.add(it)
+        }
+        for (disk in diskCandidates) {
+            if (disk.exists() && disk.isFile && hasTokensInDiskImage(disk)) {
+                markLoginCached()
+                return true
+            }
+        }
+
+        return false
+    }
+
+    private fun markLoginCached() {
+        try {
+            File(context.filesDir, ".login_cached").writeText(System.currentTimeMillis().toString())
+            val qemuDir = File(context.filesDir, "qemu")
+            if (qemuDir.exists()) {
+                File(qemuDir, ".login_cached").writeText(System.currentTimeMillis().toString())
+            }
+        } catch (e: Exception) {}
+    }
+
+    private fun hasTokensInDiskImage(disk: File): Boolean {
+        if (!disk.exists() || !disk.isFile || disk.length() < 1024) return false
+        val signatures = listOf(
+            "token_cache.json".toByteArray(Charsets.UTF_8),
+            "MUSIC_TOKEN".toByteArray(Charsets.UTF_8),
+            "kvs.sqlitedb".toByteArray(Charsets.UTF_8)
+        )
+
+        try {
+            disk.inputStream().buffered().use { input ->
+                val buf = ByteArray(1024 * 1024) // 1MB buffer
+                var overlap: ByteArray? = null
+                val maxChunks = 64 // Scan up to 64MB partition
+                for (chunkIdx in 0 until maxChunks) {
+                    val bytesRead = input.read(buf)
+                    if (bytesRead <= 0) break
+
+                    val chunk: ByteArray
+                    if (overlap != null) {
+                        chunk = ByteArray(overlap.size + bytesRead)
+                        System.arraycopy(overlap, 0, chunk, 0, overlap.size)
+                        System.arraycopy(buf, 0, chunk, overlap.size, bytesRead)
+                    } else {
+                        chunk = if (bytesRead == buf.size) buf else buf.copyOf(bytesRead)
+                    }
+
+                    for (sig in signatures) {
+                        if (containsSubarray(chunk, sig)) {
+                            return true
+                        }
+                    }
+
+                    overlap = if (bytesRead >= 64) {
+                        buf.copyOfRange(bytesRead - 64, bytesRead)
+                    } else {
+                        null
+                    }
+                }
+            }
+        } catch (e: Exception) {
+            // best effort
+        }
+        return false
+    }
+
+    private fun containsSubarray(source: ByteArray, target: ByteArray): Boolean {
+        if (target.isEmpty() || source.size < target.size) return false
+        val first = target[0]
+        val max = source.size - target.size
+        var i = 0
+        while (i <= max) {
+            while (i <= max && source[i] != first) {
+                i++
+            }
+            if (i <= max) {
+                var j = 1
+                while (j < target.size && source[i + j] == target[j]) {
+                    j++
+                }
+                if (j == target.size) return true
+                i++
+            }
+        }
+        return false
     }
 
     @JavascriptInterface
@@ -87,6 +197,10 @@ class WebAppInterface(
                     put("success", success)
                     put("need2FA", message == "2FA")
                     put("message", if (message == "2FA") "Two-factor authentication required" else message)
+                }
+
+                if (success) {
+                    markLoginCached()
                 }
 
                 val safeResult = resultJson.toString().replace("'", "\\'")

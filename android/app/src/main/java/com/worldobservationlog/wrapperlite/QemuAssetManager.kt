@@ -67,7 +67,11 @@ class QemuAssetManager(private val context: Context) {
     }
 
     fun getDataDisk(): File {
-        return File(qemuDir, "data.img")
+        val candidates = listOf(
+            File(qemuDir, "data.img"),
+            File(context.filesDir, "data.img")
+        )
+        return candidates.firstOrNull { it.exists() } ?: File(qemuDir, "data.img")
     }
 
     fun makeExecutable(file: File) {

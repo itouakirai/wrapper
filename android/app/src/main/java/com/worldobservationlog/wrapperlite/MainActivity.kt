@@ -9,9 +9,12 @@ import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Bundle
 import android.os.IBinder
+import android.webkit.JsResult
+import android.webkit.WebChromeClient
 import android.webkit.WebSettings
 import android.webkit.WebView
 import android.webkit.WebViewClient
+import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
@@ -102,6 +105,37 @@ class MainActivity : AppCompatActivity() {
                 super.onPageFinished(view, url)
                 // Initialize Android mode in UI
                 webView.evaluateJavascript("detectPlatform()", null)
+            }
+        }
+
+        webView.webChromeClient = object : WebChromeClient() {
+            override fun onJsAlert(view: WebView?, url: String?, message: String?, result: JsResult?): Boolean {
+                if (isFinishing || isDestroyed) {
+                    result?.cancel()
+                    return true
+                }
+                AlertDialog.Builder(this@MainActivity)
+                    .setTitle(R.string.app_name)
+                    .setMessage(message ?: "")
+                    .setPositiveButton(android.R.string.ok) { _, _ -> result?.confirm() }
+                    .setOnCancelListener { result?.confirm() }
+                    .show()
+                return true
+            }
+
+            override fun onJsConfirm(view: WebView?, url: String?, message: String?, result: JsResult?): Boolean {
+                if (isFinishing || isDestroyed) {
+                    result?.cancel()
+                    return true
+                }
+                AlertDialog.Builder(this@MainActivity)
+                    .setTitle(R.string.app_name)
+                    .setMessage(message ?: "")
+                    .setPositiveButton(android.R.string.ok) { _, _ -> result?.confirm() }
+                    .setNegativeButton(android.R.string.cancel) { _, _ -> result?.cancel() }
+                    .setOnCancelListener { result?.cancel() }
+                    .show()
+                return true
             }
         }
 

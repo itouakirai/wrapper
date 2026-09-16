@@ -741,6 +741,22 @@ function updateEndpointDisplay(host, port) {
 
 // Service Lifecycle
 async function handleStart() {
+  if (isAndroidApp && window.Android && typeof window.Android.hasLoginCache === 'function') {
+    try {
+      hasCachedLogin = window.Android.hasLoginCache();
+    } catch (e) {}
+  } else if (!isAndroidApp) {
+    try {
+      const res = await fetch('/api/status');
+      if (res.ok) {
+        const data = await res.json();
+        if (typeof data.hasLoginCache === 'boolean') {
+          hasCachedLogin = data.hasLoginCache;
+        }
+      }
+    } catch (e) {}
+  }
+
   if (hasCachedLogin === false) {
     const proceed = confirm(t('confirm_start_without_login'));
     if (!proceed) {
