@@ -184,6 +184,7 @@ const translations = {
     log_cfg_saved: "[gui] Configuration saved successfully.",
     confirm_reset_settings: "Reset settings to default?",
     alert_copied: "Copied: %s",
+    alert_no_login_cache: "No Apple Music login cache detected! wrapper-lite requires cached login credentials to decrypt audio streams. Please log in first.",
     confirm_start_without_login: "No Apple Music login cache detected. wrapper-lite requires cached login credentials to decrypt audio streams. Do you want to start the service anyway?",
     hint_regions_no_login: "No login cache - login via Account & Auth",
     log_service_starting: "[gui] Launching wrapper-lite service...",
@@ -361,6 +362,7 @@ const translations = {
     log_cfg_saved: "[gui] 配置已成功保存。",
     confirm_reset_settings: "是否确认将所有设置恢复为默认值？",
     alert_copied: "已复制到剪贴板: %s",
+    alert_no_login_cache: "未检测到 Apple Music 登录缓存！wrapper-lite 依赖有效登录凭据进行音频解密，请先前往「账号与认证」登录！",
     confirm_start_without_login: "检测到尚未登录 Apple Music 账号（无登录缓存）。wrapper-lite 依赖缓存的凭据进行音频解密。是否仍要直接启动服务？",
     hint_regions_no_login: "未检测到有效登录缓存 - 请前往账号与认证登录",
     log_service_starting: "[gui] 正在启动 wrapper-lite 服务...",
@@ -757,12 +759,12 @@ async function handleStart() {
     } catch (e) {}
   }
 
-  if (hasCachedLogin === false) {
-    const proceed = confirm(t('confirm_start_without_login'));
-    if (!proceed) {
-      switchToTab('account');
-      return;
-    }
+  if (!hasCachedLogin) {
+    alert(t('alert_no_login_cache'));
+    switchToTab('account');
+    const userEl = document.getElementById('auth-username');
+    if (userEl) userEl.focus();
+    return;
   }
 
   setStartingUI();

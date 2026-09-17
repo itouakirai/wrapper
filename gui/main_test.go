@@ -6,6 +6,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"runtime"
 	"testing"
 )
 
@@ -177,6 +178,41 @@ func TestEngineModeRestriction(t *testing.T) {
 	expectedErrMsg := "wrapper-lite-qemu not found"
 	if !bytes.Contains([]byte(err.Error()), []byte(expectedErrMsg)) {
 		t.Errorf("expected error containing %q, got %v", expectedErrMsg, err)
+	}
+}
+
+func TestStartServiceBlockedWithoutLoginCache(t *testing.T) {
+	tempDir, err := os.MkdirTemp("", "wl-start-block-*")
+	if err != nil {
+		t.Fatalf("failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tempDir)
+
+	// Create fake wrapper-lite-qemu binary so launcher check passes
+	var fakeLauncher string
+	if runtime.GOOS == "windows" {
+		fakeLauncher = filepath.Join(tempDir, "wrapper-lite-qemu.exe")
+	} else {
+		fakeLauncher = filepath.Join(tempDir, "wrapper-lite-qemu")
+	}
+	_ = os.WriteFile(fakeLauncher, []byte("#!/bin/sh\nexit 0\n"), 0755)
+
+	s := &AppState{
+		appDir:     tempDir,
+		qemuDir:    filepath.Join(tempDir, "qemu"),
+		logClients: make(map[chan string]bool),
+	}
+
+	err = s.startService(Config{
+		Engine: "qemu",
+		Host:   "127.0.0.1",
+		Port:   12340,
+	})
+	if err == nil {
+		t.Errorf("expected error when starting service without login cache")
+	}
+	if !bytes.Contains([]byte(err.Error()), []byte("no login cache detected")) {
+		t.Errorf("expected error containing 'no login cache detected', got: %v", err)
 	}
 }
 

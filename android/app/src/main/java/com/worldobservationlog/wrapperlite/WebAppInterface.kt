@@ -179,6 +179,11 @@ class WebAppInterface(
     @JavascriptInterface
     fun startService(configJson: String) {
         val s = serviceProvider() ?: return
+        if (!hasLoginCache()) {
+            evaluateJs("window.onAndroidLogEntry('[error] Start failed: no login cache detected. Please login first.')")
+            evaluateJs("switchToTab('account')")
+            return
+        }
         try {
             val obj = JSONObject(configJson)
             val host = obj.optString("host", "0.0.0.0")

@@ -563,6 +563,10 @@ func (s *AppState) startService(cfg Config) error {
 		}
 	}
 
+	if !s.hasLoginCache() {
+		return fmt.Errorf("no login cache detected. Decryption tokens are missing; please login via 'Account & Auth' tab first")
+	}
+
 	cmd := exec.Command(bin, args...)
 	cmd.Dir = s.appDir
 	setProcessGroup(cmd)
@@ -578,10 +582,6 @@ func (s *AppState) startService(cfg Config) error {
 
 	if err := cmd.Start(); err != nil {
 		return fmt.Errorf("failed to start process %s: %w", bin, err)
-	}
-
-	if !s.hasLoginCache() {
-		s.appendLog("[warn] Starting service without login cache! Decryption tokens are missing; please login via 'Account & Auth'.")
 	}
 
 	s.mu.Lock()
