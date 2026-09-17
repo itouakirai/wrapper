@@ -244,41 +244,50 @@ class QemuRunner(private val context: Context, private val assetManager: QemuAss
                 if (!need2FADetected.get() && is2FALine(lineText)) {
                     if (need2FADetected.compareAndSet(false, true)) {
                         onLog("[auth] Apple 2FA requirement detected. Terminating QEMU guest early to prompt for verification code...")
-                        try {
-                            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                                proc.destroyForcibly()
-                            } else {
+                        Thread {
+                            try {
                                 proc.destroy()
+                                Thread.sleep(300)
+                                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O && proc.isAlive) {
+                                    proc.destroyForcibly()
+                                }
+                            } catch (e: Throwable) {
+                                Log.e(TAG, "Failed to terminate QEMU process on 2FA detection", e)
                             }
-                            Unit
-                        } catch (e: Exception) {
-                            Log.e(TAG, "Failed to terminate QEMU process on 2FA detection", e)
-                        }
+                        }.start()
                     }
                 }
                 Unit
             }
 
             val stdoutThread = Thread {
-                val reader = BufferedReader(InputStreamReader(proc.inputStream))
-                var line: String?
-                while (reader.readLine().also { line = it } != null) {
-                    line?.let {
-                        outputLines.add(it)
-                        onLog(it)
-                        checkAndTrigger2FA(it)
+                try {
+                    val reader = BufferedReader(InputStreamReader(proc.inputStream))
+                    var line: String?
+                    while (reader.readLine().also { line = it } != null) {
+                        line?.let {
+                            outputLines.add(it)
+                            onLog(it)
+                            checkAndTrigger2FA(it)
+                        }
                     }
+                } catch (t: Throwable) {
+                    Log.d(TAG, "stdout reader completed: ${t.message}")
                 }
             }
             val stderrThread = Thread {
-                val errReader = BufferedReader(InputStreamReader(proc.errorStream))
-                var line: String?
-                while (errReader.readLine().also { line = it } != null) {
-                    line?.let {
-                        outputLines.add(it)
-                        onLog(it)
-                        checkAndTrigger2FA(it)
+                try {
+                    val errReader = BufferedReader(InputStreamReader(proc.errorStream))
+                    var line: String?
+                    while (errReader.readLine().also { line = it } != null) {
+                        line?.let {
+                            outputLines.add(it)
+                            onLog(it)
+                            checkAndTrigger2FA(it)
+                        }
                     }
+                } catch (t: Throwable) {
+                    Log.d(TAG, "stderr reader completed: ${t.message}")
                 }
             }
             stdoutThread.start()

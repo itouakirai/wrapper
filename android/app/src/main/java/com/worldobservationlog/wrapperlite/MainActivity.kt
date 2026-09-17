@@ -142,7 +142,17 @@ class MainActivity : AppCompatActivity() {
         val bridge = WebAppInterface(
             context = this,
             serviceProvider = { qemuService },
-            evaluateJs = { js -> runOnUiThread { webView.evaluateJavascript(js, null) } }
+            evaluateJs = { js ->
+                runOnUiThread {
+                    try {
+                        if (!isFinishing && !isDestroyed) {
+                            webView.evaluateJavascript(js, null)
+                        }
+                    } catch (e: Throwable) {
+                        android.util.Log.e("MainActivity", "Failed to evaluate JS", e)
+                    }
+                }
+            }
         )
         webView.addJavascriptInterface(bridge, "Android")
 

@@ -226,7 +226,7 @@ class WebAppInterface(
                 val deviceInfo = obj.optString("deviceInfo", "")
 
                 val (success, message) = s.runner.login(username, password, twoFactor, proxy, deviceInfo) { line ->
-                    val safeLine = line.replace("\\", "\\\\").replace("'", "\\'").replace("\n", " ")
+                    val safeLine = line.replace("\\", "\\\\").replace("'", "\\'").replace("\r", " ").replace("\n", " ")
                     evaluateJs("window.onAndroidLogEntry('$safeLine')")
                 }
 
