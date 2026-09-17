@@ -1,6 +1,7 @@
 package com.worldobservationlog.wrapperlite
 
 import android.content.Context
+import android.os.Build
 import android.util.Base64
 import android.util.Log
 import kotlinx.coroutines.Dispatchers
@@ -8,6 +9,8 @@ import kotlinx.coroutines.withContext
 import java.io.BufferedReader
 import java.io.File
 import java.io.InputStreamReader
+import java.util.Collections
+import java.util.concurrent.atomic.AtomicBoolean
 
 class QemuRunner(private val context: Context, private val assetManager: QemuAssetManager) {
 
@@ -147,6 +150,14 @@ class QemuRunner(private val context: Context, private val assetManager: QemuAss
         }
     }
 
+    private fun is2FALine(line: String): Boolean {
+        return line.contains("need2FA: true") ||
+               line.contains("2FA: true") ||
+               line.contains("2FA code") ||
+               line.contains("requiresHSA2VerificationCode") ||
+               line.contains("Enter your 2FA code into")
+    }
+
     fun login(
         username: String,
         password: String,
@@ -222,12 +233,28 @@ class QemuRunner(private val context: Context, private val assetManager: QemuAss
         val env = pb.environment()
         setupEnvironment(env, binDir)
 
-        val outputLines = mutableListOf<String>()
-        var need2FA = false
+        val outputLines = Collections.synchronizedList(mutableListOf<String>())
+        val need2FADetected = AtomicBoolean(false)
 
         try {
             onLog("[auth] Running Apple Music login in QEMU guest for account $username...")
             val proc = pb.start()
+
+            val checkAndTrigger2FA = { lineText: String ->
+                if (!need2FADetected.get() && is2FALine(lineText)) {
+                    if (need2FADetected.compareAndSet(false, true)) {
+                        onLog("[auth] Apple 2FA requirement detected. Terminating QEMU guest early to prompt for verification code...")
+                        try {
+                            proc.destroy()
+                            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                                proc.destroyForcibly()
+                            }
+                        } catch (e: Exception) {
+                            Log.e(TAG, "Failed to terminate QEMU process on 2FA detection", e)
+                        }
+                    }
+                }
+            }
 
             val stdoutThread = Thread {
                 val reader = BufferedReader(InputStreamReader(proc.inputStream))
@@ -236,9 +263,7 @@ class QemuRunner(private val context: Context, private val assetManager: QemuAss
                     line?.let {
                         outputLines.add(it)
                         onLog(it)
-                        if (it.contains("need2FA: true") || it.contains("2FA code")) {
-                            need2FA = true
-                        }
+                        checkAndTrigger2FA(it)
                     }
                 }
             }
@@ -249,9 +274,7 @@ class QemuRunner(private val context: Context, private val assetManager: QemuAss
                     line?.let {
                         outputLines.add(it)
                         onLog(it)
-                        if (it.contains("need2FA: true") || it.contains("2FA code")) {
-                            need2FA = true
-                        }
+                        checkAndTrigger2FA(it)
                     }
                 }
             }
@@ -263,8 +286,8 @@ class QemuRunner(private val context: Context, private val assetManager: QemuAss
             stderrThread.join(2000)
             argsFile.delete()
 
-            val fullOutput = outputLines.joinToString("\n")
-            if (need2FA || fullOutput.contains("need2FA: true") || fullOutput.contains("2FA code")) {
+            val fullOutput = synchronized(outputLines) { outputLines.joinToString("\n") }
+            if (need2FADetected.get() || is2FALine(fullOutput)) {
                 return Pair(false, "2FA")
             }
             if (exitCode == 0 && (fullOutput.contains("login successful") || fullOutput.contains("login complete") || fullOutput.contains("Tokens cached"))) {
@@ -286,6 +309,9 @@ class QemuRunner(private val context: Context, private val assetManager: QemuAss
         process?.let {
             try {
                 it.destroy()
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                    it.destroyForcibly()
+                }
             } catch (e: Exception) {
                 Log.e(TAG, "Error destroying QEMU process", e)
             }
