@@ -602,6 +602,8 @@ async function detectPlatform() {
   }
 }
 
+const refreshPlatformInfo = detectPlatform;
+
 function updatePlatformUI() {
   const badge = document.getElementById('platform-badge');
   const metricBadge = document.getElementById('metric-platform-badge');
@@ -1084,20 +1086,20 @@ async function handleLogin() {
       hasCachedLogin = true;
       appendLog(t('log_login_succeeded'), 'run');
       alert(t('alert_login_succeeded'));
-      refreshPlatformInfo();
+      detectPlatform();
     } else if (result.need2FA) {
       prompt2faModal();
     } else {
       hasCachedLogin = false;
       appendLog(t('log_login_failed', result.message || 'Authentication error'), 'error');
       alert(t('alert_login_failed', result.message || 'Check credentials'));
-      refreshPlatformInfo();
+      detectPlatform();
     }
   } catch (err) {
     hasCachedLogin = false;
     appendLog(t('log_login_failed', err.message), 'error');
     alert(t('alert_login_failed', err.message));
-    refreshPlatformInfo();
+    detectPlatform();
   } finally {
     submitBtn.disabled = false;
     progressBox.classList.add('hidden');
@@ -1575,13 +1577,13 @@ window.onAndroidLoginResult = (resultJson) => {
     hasCachedLogin = true;
     appendLog(t('log_login_succeeded'), 'run');
     alert(t('alert_login_succeeded'));
-    refreshPlatformInfo();
+    detectPlatform();
   } else if (result.need2FA) {
     prompt2faModal();
   } else {
     hasCachedLogin = false;
     appendLog(t('log_login_failed', result.message || 'Authentication error'), 'error');
     alert(t('alert_login_failed', result.message || 'Check credentials'));
-    refreshPlatformInfo();
+    detectPlatform();
   }
 };
