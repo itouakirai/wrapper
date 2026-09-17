@@ -130,12 +130,32 @@ void set_credentials(const char* user, const char* pass) {
     amPassword = (pass) ? strdup(pass) : nullptr;
 }
 
+static void wipe_and_remove(const std::string& path) {
+    if (!file_exists(path.c_str())) return;
+    FILE* fp = fopen(path.c_str(), "r+");
+    if (fp) {
+        fseek(fp, 0, SEEK_END);
+        long sz = ftell(fp);
+        if (sz > 0) {
+            fseek(fp, 0, SEEK_SET);
+            char* zeroes = (char*)calloc(1, sz);
+            if (zeroes) {
+                fwrite(zeroes, 1, sz, fp);
+                free(zeroes);
+            }
+            fflush(fp);
+        }
+        fclose(fp);
+    }
+    remove(path.c_str());
+}
+
 bool login(struct shared_ptr ctx) {
     LOG_INFO("logging in...");
-    std::string storefrontPath = std::string(g_base_dir) + "/STOREFRONT_ID";
-    std::string musicTokenPath = std::string(g_base_dir) + "/MUSIC_TOKEN";
-    if (file_exists(storefrontPath.c_str())) remove(storefrontPath.c_str());
-    if (file_exists(musicTokenPath.c_str())) remove(musicTokenPath.c_str());
+    wipe_and_remove(std::string(g_base_dir) + "/STOREFRONT_ID");
+    wipe_and_remove(std::string(g_base_dir) + "/MUSIC_TOKEN");
+    wipe_and_remove(std::string(g_base_dir) + "/DEV_TOKEN");
+    wipe_and_remove(std::string(g_base_dir) + "/token_cache.json");
 
     struct shared_ptr flow;
     memset(&flow, 0, sizeof(flow));

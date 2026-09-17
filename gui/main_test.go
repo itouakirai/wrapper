@@ -38,17 +38,17 @@ func TestHasLoginCacheMarkerFile(t *testing.T) {
 
 	_ = os.Remove(markerFile)
 
-	// Case 3: token_cache.json in rootfs/data -> true
+	// Case 3: token_cache.json in rootfs/data with music_token -> true
 	dataDir := filepath.Join(tempDir, "rootfs", "data")
 	if err := os.MkdirAll(dataDir, 0755); err != nil {
 		t.Fatalf("failed to create data dir: %v", err)
 	}
 	tokenFile := filepath.Join(dataDir, "token_cache.json")
-	if err := os.WriteFile(tokenFile, []byte(`{"storefront_id":"143441"}`), 0644); err != nil {
+	if err := os.WriteFile(tokenFile, []byte(`{"storefront_id":"143441","music_token":"fake-token"}`), 0644); err != nil {
 		t.Fatalf("failed to write token file: %v", err)
 	}
 	if !s.hasLoginCache() {
-		t.Errorf("expected hasLoginCache to be true when token_cache.json exists")
+		t.Errorf("expected hasLoginCache to be true when token_cache.json with music_token exists")
 	}
 
 	// Case 4: data.img exists but contains NO tokens, .login_cached exists -> must return false and clear marker
@@ -94,13 +94,13 @@ func TestHasTokensInDiskImage(t *testing.T) {
 		t.Errorf("expected false when disk image only contains mpl_db directory name")
 	}
 
-	// Case 3: File contains kvs.sqlitedb
+	// Case 3: File contains kvs.sqlitedb (must NOT be treated as login cache, RequestContext creates it on any launch/failed login)
 	copy(contentOnlyMplDb[1000:], []byte("kvs.sqlitedb"))
 	if err := os.WriteFile(diskPath, contentOnlyMplDb, 0644); err != nil {
 		t.Fatalf("failed to write disk file: %v", err)
 	}
-	if !hasTokensInDiskImage(diskPath) {
-		t.Errorf("expected true when disk image contains kvs.sqlitedb")
+	if hasTokensInDiskImage(diskPath) {
+		t.Errorf("expected false when disk image contains only kvs.sqlitedb")
 	}
 
 	// Case 4: File contains token across 1MB boundary
@@ -112,6 +112,16 @@ func TestHasTokensInDiskImage(t *testing.T) {
 	}
 	if !hasTokensInDiskImage(diskPath) {
 		t.Errorf("expected true when token signature crosses 1MB boundary")
+	}
+
+	// Case 5: File contains MUSIC_TOKEN
+	musicDisk := make([]byte, 1024*1024)
+	copy(musicDisk[500:], []byte("MUSIC_TOKEN"))
+	if err := os.WriteFile(diskPath, musicDisk, 0644); err != nil {
+		t.Fatalf("failed to write music disk file: %v", err)
+	}
+	if !hasTokensInDiskImage(diskPath) {
+		t.Errorf("expected true when disk image contains MUSIC_TOKEN")
 	}
 }
 

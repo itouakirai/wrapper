@@ -33,22 +33,31 @@ class WebAppInterface(
     fun hasLoginCache(): Boolean {
         val qemuDir = File(context.filesDir, "qemu")
 
-        // 1. Check loose token files on host filesystem
+        // 1. Check loose token files on host filesystem (MUSIC_TOKEN or token_cache.json with music_token)
         val tokenFiles = listOf(
-            File(context.filesDir, "token_cache.json"),
-            File(context.filesDir, "DEV_TOKEN"),
             File(context.filesDir, "MUSIC_TOKEN"),
-            File(context.filesDir, "STOREFRONT_ID"),
-            File(qemuDir, "token_cache.json"),
-            File(qemuDir, "DEV_TOKEN"),
             File(qemuDir, "MUSIC_TOKEN"),
-            File(qemuDir, "STOREFRONT_ID"),
-            File(File(context.filesDir, "rootfs/data"), "token_cache.json"),
-            File(File(context.filesDir, "rootfs/data"), "kvs.sqlitedb")
+            File(File(context.filesDir, "rootfs/data"), "MUSIC_TOKEN")
         )
-        if (tokenFiles.any { it.exists() }) {
+        if (tokenFiles.any { it.exists() && it.length() > 0 }) {
             markLoginCached()
             return true
+        }
+        val jsonFiles = listOf(
+            File(context.filesDir, "token_cache.json"),
+            File(qemuDir, "token_cache.json"),
+            File(File(context.filesDir, "rootfs/data"), "token_cache.json")
+        )
+        for (f in jsonFiles) {
+            if (f.exists() && f.length() > 0) {
+                try {
+                    val content = f.readText()
+                    if (content.contains("\"music_token\"") && !content.contains("\"music_token\":\"\"")) {
+                        markLoginCached()
+                        return true
+                    }
+                } catch (e: Exception) {}
+            }
         }
 
         // 2. Check QEMU data disk image (ext4 partition containing tokens)
@@ -107,8 +116,7 @@ class WebAppInterface(
         if (!disk.exists() || !disk.isFile || disk.length() < 1024) return false
         val signatures = listOf(
             "token_cache.json".toByteArray(Charsets.UTF_8),
-            "MUSIC_TOKEN".toByteArray(Charsets.UTF_8),
-            "kvs.sqlitedb".toByteArray(Charsets.UTF_8)
+            "MUSIC_TOKEN".toByteArray(Charsets.UTF_8)
         )
 
         var found = false

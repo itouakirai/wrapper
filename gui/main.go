@@ -1019,20 +1019,31 @@ func (s *AppState) checkQemuFiles() QemuCheckResult {
 }
 
 func (s *AppState) hasLoginCache() bool {
-	// 1. Check native rootfs token cache files
-	nativeFiles := []string{
-		filepath.Join(s.appDir, "rootfs", "data", "token_cache.json"),
-		filepath.Join(s.appDir, "rootfs", "data", "DEV_TOKEN"),
+	// 1. Check native rootfs token cache files (must have MUSIC_TOKEN or token_cache.json with music_token)
+	nativeTokenFiles := []string{
 		filepath.Join(s.appDir, "rootfs", "data", "MUSIC_TOKEN"),
-		filepath.Join(s.appDir, "rootfs", "data", "STOREFRONT_ID"),
-		filepath.Join(s.appDir, "rootfs", "data", "mpl_db", "kvs.sqlitedb"),
+		filepath.Join(".", "rootfs", "data", "MUSIC_TOKEN"),
+	}
+	for _, p := range nativeTokenFiles {
+		if fi, err := os.Stat(p); err == nil && !fi.IsDir() && fi.Size() > 0 {
+			return true
+		}
+	}
+	nativeJsonFiles := []string{
+		filepath.Join(s.appDir, "rootfs", "data", "token_cache.json"),
 		filepath.Join(".", "rootfs", "data", "token_cache.json"),
 	}
-	if fileExistsAny(nativeFiles) {
-		return true
+	for _, p := range nativeJsonFiles {
+		if fi, err := os.Stat(p); err == nil && !fi.IsDir() && fi.Size() > 0 {
+			if data, err := os.ReadFile(p); err == nil {
+				if bytes.Contains(data, []byte(`"music_token"`)) && !bytes.Contains(data, []byte(`"music_token":""`)) {
+					return true
+				}
+			}
+		}
 	}
 
-	// 2. Check data.img for tokens/database signatures
+	// 2. Check data.img for tokens signatures (token_cache.json or MUSIC_TOKEN)
 	diskCandidates := []string{
 		filepath.Join(s.qemuDir, "data.img"),
 		filepath.Join(".", "qemu", "data.img"),
@@ -1050,7 +1061,7 @@ func (s *AppState) hasLoginCache() bool {
 
 	// 3. Fallback marker file check:
 	// Only treat .login_cached as true if no actual storage (disk image or rootfs/data) is present to verify against.
-	// If a disk image is present but contains NO token signatures, any .login_cached is stale/bogus and must be cleaned up.
+	// If a disk image or rootfs is present but contains NO token signatures, any .login_cached is stale/bogus and must be cleaned up.
 	hasRootfsData := false
 	if fi, err := os.Stat(filepath.Join(s.appDir, "rootfs", "data")); err == nil && fi.IsDir() {
 		hasRootfsData = true
@@ -1063,7 +1074,7 @@ func (s *AppState) hasLoginCache() bool {
 		}) {
 			return true
 		}
-	} else if hasDisk {
+	} else {
 		s.clearLoginCacheMarker()
 	}
 
@@ -1081,7 +1092,6 @@ func hasTokensInDiskImage(path string) bool {
 	signatures := [][]byte{
 		[]byte("token_cache.json"),
 		[]byte("MUSIC_TOKEN"),
-		[]byte("kvs.sqlitedb"),
 	}
 
 	var overlap []byte
