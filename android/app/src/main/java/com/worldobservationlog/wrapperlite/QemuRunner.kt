@@ -66,19 +66,22 @@ class QemuRunner(private val context: Context, private val assetManager: QemuAss
 
         val guestArgsStr = guestArgsList.joinToString("\n")
         val b64Args = Base64.encodeToString(guestArgsStr.toByteArray(Charsets.UTF_8), Base64.NO_WRAP)
-        val appendStr = "console=ttyS0 quiet net.ifnames=0 biosdevname=0 lite_args_b64=$b64Args"
+        val appendStr = "console=ttyS0 quiet loglevel=3 net.ifnames=0 biosdevname=0 lite_args_b64=$b64Args"
 
         val argsFile = File(assetManager.qemuDir, ".lite-qemu-args")
         try {
             argsFile.writeText(guestArgsStr)
         } catch (e: Exception) {}
 
-        // Build QEMU arguments
+        // Build QEMU arguments with performance tuning
+        val (accelArgs, cpuArgs) = getAccelAndCpuArgs(smp)
         val cmd = mutableListOf(
             qemuBin.absolutePath,
-            "-L", binDir.absolutePath,
-            "-accel", "tcg",
-            "-cpu", "max",
+            "-L", binDir.absolutePath
+        )
+        cmd.addAll(accelArgs)
+        cmd.addAll(cpuArgs)
+        cmd.addAll(listOf(
             "-m", memory,
             "-smp", smp,
             "-kernel", kernel.absolutePath,
@@ -88,8 +91,8 @@ class QemuRunner(private val context: Context, private val assetManager: QemuAss
             "-serial", "stdio",
             "-no-reboot",
             "-nic", "user,model=e1000,hostfwd=tcp:$host:$port-:12340",
-            "-drive", "file=${disk.absolutePath},format=raw,if=virtio"
-        )
+            "-drive", "file=${disk.absolutePath},format=raw,if=virtio,cache=writeback"
+        ))
         if (argsFile.exists()) {
             cmd.add("-fw_cfg")
             cmd.add("name=lite_args,file=${argsFile.absolutePath}")
@@ -199,18 +202,21 @@ class QemuRunner(private val context: Context, private val assetManager: QemuAss
 
         val guestArgsStr = guestArgsList.joinToString("\n")
         val b64Args = Base64.encodeToString(guestArgsStr.toByteArray(Charsets.UTF_8), Base64.NO_WRAP)
-        val appendStr = "console=ttyS0 quiet net.ifnames=0 biosdevname=0 lite_args_b64=$b64Args"
+        val appendStr = "console=ttyS0 quiet loglevel=3 net.ifnames=0 biosdevname=0 lite_args_b64=$b64Args"
 
         val argsFile = File(assetManager.qemuDir, ".lite-qemu-args")
         try {
             argsFile.writeText(guestArgsStr)
         } catch (e: Exception) {}
 
+        val (accelArgs, cpuArgs) = getAccelAndCpuArgs("2")
         val cmd = mutableListOf(
             qemuBin.absolutePath,
-            "-L", binDir.absolutePath,
-            "-accel", "tcg",
-            "-cpu", "max",
+            "-L", binDir.absolutePath
+        )
+        cmd.addAll(accelArgs)
+        cmd.addAll(cpuArgs)
+        cmd.addAll(listOf(
             "-m", "512",
             "-smp", "2",
             "-kernel", kernel.absolutePath,
@@ -220,8 +226,8 @@ class QemuRunner(private val context: Context, private val assetManager: QemuAss
             "-serial", "stdio",
             "-no-reboot",
             "-nic", "user,model=e1000",
-            "-drive", "file=${disk.absolutePath},format=raw,if=virtio"
-        )
+            "-drive", "file=${disk.absolutePath},format=raw,if=virtio,cache=writeback"
+        ))
         if (argsFile.exists()) {
             cmd.add("-fw_cfg")
             cmd.add("name=lite_args,file=${argsFile.absolutePath}")
@@ -336,6 +342,24 @@ class QemuRunner(private val context: Context, private val assetManager: QemuAss
         }
         isRunning = false
         process = null
+    }
+
+    private fun canUseKvm(): Boolean {
+        return try {
+            val kvm = File("/dev/kvm")
+            kvm.exists() && kvm.canRead() && kvm.canWrite()
+        } catch (e: Exception) {
+            false
+        }
+    }
+
+    private fun getAccelAndCpuArgs(smp: String): Pair<List<String>, List<String>> {
+        if (canUseKvm()) {
+            return Pair(listOf("-accel", "kvm"), listOf("-cpu", "host"))
+        }
+        val smpCount = smp.toIntOrNull() ?: 2
+        val accelParam = if (smpCount > 1) "tcg,thread=multi,tb-size=128" else "tcg,tb-size=128"
+        return Pair(listOf("-accel", accelParam), listOf("-cpu", "Westmere"))
     }
 
     private fun setupEnvironment(env: MutableMap<String, String>, binDir: File) {

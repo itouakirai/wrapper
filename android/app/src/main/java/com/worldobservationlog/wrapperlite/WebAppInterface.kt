@@ -21,6 +21,11 @@ class WebAppInterface(
 
     private val prefs = context.getSharedPreferences("wl_prefs", Context.MODE_PRIVATE)
 
+    @Volatile
+    private var cachedLoginState: Boolean? = null
+    @Volatile
+    private var lastDiskCheckTime: Long = 0L
+
     @JavascriptInterface
     fun getPlatform(): String = "android"
 
@@ -31,9 +36,24 @@ class WebAppInterface(
 
     @JavascriptInterface
     fun hasLoginCache(): Boolean {
-        val qemuDir = File(context.filesDir, "qemu")
+        // Fast path 1: In-memory cache
+        if (cachedLoginState == true) {
+            return true
+        }
 
-        // 1. Check loose token files on host filesystem (MUSIC_TOKEN or token_cache.json with music_token)
+        val qemuDir = File(context.filesDir, "qemu")
+        val markerFiles = listOf(
+            File(context.filesDir, ".login_cached"),
+            File(qemuDir, ".login_cached")
+        )
+
+        // Fast path 2: Marker file check
+        if (markerFiles.any { it.exists() }) {
+            cachedLoginState = true
+            return true
+        }
+
+        // Fast path 3: Loose token files on host filesystem
         val tokenFiles = listOf(
             File(context.filesDir, "MUSIC_TOKEN"),
             File(qemuDir, "MUSIC_TOKEN"),
@@ -41,6 +61,7 @@ class WebAppInterface(
         )
         if (tokenFiles.any { it.exists() && it.length() > 0 }) {
             markLoginCached()
+            cachedLoginState = true
             return true
         }
         val jsonFiles = listOf(
@@ -54,13 +75,20 @@ class WebAppInterface(
                     val content = f.readText()
                     if (content.contains("\"music_token\"") && !content.contains("\"music_token\":\"\"")) {
                         markLoginCached()
+                        cachedLoginState = true
                         return true
                     }
                 } catch (e: Exception) {}
             }
         }
 
-        // 2. Check QEMU data disk image (ext4 partition containing tokens)
+        // Slow path: Scan data disk, but throttle to at most once every 10 seconds to protect flash storage & UI responsiveness
+        val now = System.currentTimeMillis()
+        if (now - lastDiskCheckTime < 10000L) {
+            return false
+        }
+        lastDiskCheckTime = now
+
         val diskCandidates = mutableListOf(
             File(qemuDir, "data.img"),
             File(context.filesDir, "data.img")
@@ -68,34 +96,22 @@ class WebAppInterface(
         serviceProvider()?.assetManager?.getDataDisk()?.let {
             if (!diskCandidates.contains(it)) diskCandidates.add(it)
         }
-        var hasDisk = false
         for (disk in diskCandidates) {
             if (disk.exists() && disk.isFile) {
-                hasDisk = true
                 if (hasTokensInDiskImage(disk)) {
                     markLoginCached()
+                    cachedLoginState = true
                     return true
                 }
             }
         }
 
-        // 3. Fallback marker file check only when no disk image is present to inspect
-        if (!hasDisk) {
-            val markerFiles = listOf(
-                File(context.filesDir, ".login_cached"),
-                File(qemuDir, ".login_cached")
-            )
-            if (markerFiles.any { it.exists() }) {
-                return true
-            }
-        } else {
-            clearLoginCached()
-        }
-
+        cachedLoginState = false
         return false
     }
 
     private fun clearLoginCached() {
+        cachedLoginState = false
         try {
             File(context.filesDir, ".login_cached").delete()
             File(File(context.filesDir, "qemu"), ".login_cached").delete()
@@ -103,6 +119,7 @@ class WebAppInterface(
     }
 
     private fun markLoginCached() {
+        cachedLoginState = true
         try {
             File(context.filesDir, ".login_cached").writeText(System.currentTimeMillis().toString())
             val qemuDir = File(context.filesDir, "qemu")
@@ -285,6 +302,15 @@ class WebAppInterface(
 
     @JavascriptInterface
     fun getServiceStatus(host: String, port: Int): String {
+        val isRunning = serviceProvider()?.runner?.isRunning ?: false
+        if (!isRunning) {
+            return JSONObject().apply {
+                put("online", false)
+                put("latency", 0)
+                put("message", "Service stopped")
+            }.toString()
+        }
+
         val targetHost = if (host.isBlank() || host == "0.0.0.0") "127.0.0.1" else host
         val urlStr = "http://$targetHost:$port/status"
         val startTime = System.currentTimeMillis()
@@ -292,8 +318,8 @@ class WebAppInterface(
         return try {
             val url = URL(urlStr)
             conn = (url.openConnection() as HttpURLConnection).apply {
-                connectTimeout = 2000
-                readTimeout = 2000
+                connectTimeout = 600
+                readTimeout = 800
                 requestMethod = "GET"
                 instanceFollowRedirects = false
             }

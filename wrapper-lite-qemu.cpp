@@ -268,6 +268,13 @@ static std::vector<std::string> buildQemuArgs(const std::string& qemuBin,
     args.push_back("-accel");
     if (accel == "whpx") {
         args.push_back("whpx,kernel-irqchip=off");
+    } else if (accel == "tcg") {
+        int smpVal = std::atoi(g_smp.c_str());
+        if (smpVal > 1) {
+            args.push_back("tcg,thread=multi,tb-size=128");
+        } else {
+            args.push_back("tcg,tb-size=128");
+        }
     } else {
         args.push_back(accel);
     }
@@ -277,6 +284,9 @@ static std::vector<std::string> buildQemuArgs(const std::string& qemuBin,
     } else if (accel == "whpx") {
         args.push_back("-cpu");
         args.push_back("qemu64-v1");
+    } else if (accel == "tcg") {
+        args.push_back("-cpu");
+        args.push_back("Westmere");
     } else {
         args.push_back("-cpu");
         args.push_back("max");
@@ -298,7 +308,7 @@ static std::vector<std::string> buildQemuArgs(const std::string& qemuBin,
         }
     }
     args.push_back(initrdPath);
-    std::string appendStr = "console=ttyS0 quiet net.ifnames=0 biosdevname=0";
+    std::string appendStr = "console=ttyS0 quiet loglevel=3 net.ifnames=0 biosdevname=0";
     {
         std::ifstream af(argsFile, std::ios::binary);
         std::ostringstream oss;
@@ -318,7 +328,7 @@ static std::vector<std::string> buildQemuArgs(const std::string& qemuBin,
     args.push_back("-nic");
     args.push_back("user,model=e1000,hostfwd=tcp:" + g_host + ":" + g_hostPort + "-:" + g_guestPort);
     args.push_back("-drive");
-    args.push_back("file=" + dir + "/data.img,format=raw,if=virtio");
+    args.push_back("file=" + dir + "/data.img,format=raw,if=virtio,cache=writeback");
     std::ifstream af(argsFile);
     if (af.peek() != std::ifstream::traits_type::eof()) {
         args.push_back("-fw_cfg");

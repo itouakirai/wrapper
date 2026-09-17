@@ -947,7 +947,7 @@ async function checkServiceHealth() {
   let backendRunning = false;
   if (isAndroidApp && window.Android.isServiceRunning) {
     backendRunning = window.Android.isServiceRunning();
-    if (typeof window.Android.hasLoginCache === 'function') {
+    if (typeof window.Android.hasLoginCache === 'function' && !hasCachedLogin) {
       try {
         hasCachedLogin = window.Android.hasLoginCache();
       } catch (e) {}
@@ -1422,35 +1422,9 @@ function copyTestResponse() {
   safeCopyToClipboard(text, t('alert_response_copied'));
 }
 
-// Live Logs Terminal
-function initLogStream() {
-  if (isAndroidApp) {
-    // Android calls window.onAndroidLogEntry(line)
-    window.onAndroidLogEntry = (line) => {
-      appendLog(line);
-    };
-    return;
-  }
+const MAX_LOG_LINES = 500;
 
-  try {
-    logEventSource = new EventSource('/api/logs/stream');
-    logEventSource.onmessage = (event) => {
-      if (event.data) appendLog(event.data);
-    };
-    logEventSource.onerror = () => {
-      // Reconnect automatically handled by EventSource
-    };
-  } catch (e) {}
-}
-
-function appendLog(line, forcedClass = null) {
-  // Ignore routine health-check polling logs to avoid cluttering live GUI log
-  if (line.includes('request: GET /status')) return;
-
-  const terminal = document.getElementById('logs-terminal');
-  const dashTerminal = document.getElementById('dashboard-logs-terminal');
-  if (!terminal && !dashTerminal) return;
-
+function createLogDiv(line, forcedClass = null) {
   const div = document.createElement('div');
   div.className = 'log-line';
 
@@ -1469,28 +1443,104 @@ function appendLog(line, forcedClass = null) {
   }
 
   div.innerText = line;
+  return div;
+}
 
-  if (terminal) {
-    terminal.appendChild(div);
+function trimLogLines(container, max) {
+  while (container.childNodes.length > max) {
+    container.removeChild(container.firstChild);
   }
-  if (dashTerminal) {
-    dashTerminal.appendChild(div.cloneNode(true));
+}
+
+// Live Logs Terminal
+function initLogStream() {
+  if (isAndroidApp) {
+    // Android calls window.onAndroidLogBatch(lines) or window.onAndroidLogEntry(line)
+    window.onAndroidLogBatch = (lines) => {
+      appendLogBatch(lines);
+    };
+    window.onAndroidLogEntry = (line) => {
+      appendLog(line);
+    };
+    return;
   }
 
-  logsCount++;
+  try {
+    logEventSource = new EventSource('/api/logs/stream');
+    logEventSource.onmessage = (event) => {
+      if (event.data) appendLog(event.data);
+    };
+    logEventSource.onerror = () => {
+      // Reconnect automatically handled by EventSource
+    };
+  } catch (e) {}
+}
+
+function appendLogBatch(lines) {
+  if (!Array.isArray(lines) || lines.length === 0) return;
+  const terminal = document.getElementById('logs-terminal');
+  const dashTerminal = document.getElementById('dashboard-logs-terminal');
+  if (!terminal && !dashTerminal) return;
+
+  const validLines = lines.filter(l => typeof l === 'string' && !l.includes('request: GET /status'));
+  if (validLines.length === 0) return;
+
+  const termFrag = terminal ? document.createDocumentFragment() : null;
+  const dashFrag = dashTerminal ? document.createDocumentFragment() : null;
+
+  for (const line of validLines) {
+    if (termFrag) termFrag.appendChild(createLogDiv(line));
+    if (dashFrag) dashFrag.appendChild(createLogDiv(line));
+    logsCount++;
+  }
+
+  if (terminal && termFrag) {
+    terminal.appendChild(termFrag);
+    trimLogLines(terminal, MAX_LOG_LINES);
+    const chkAutoscroll = document.getElementById('chk-autoscroll');
+    if (chkAutoscroll && chkAutoscroll.checked) {
+      terminal.scrollTop = terminal.scrollHeight;
+    }
+  }
+
+  if (dashTerminal && dashFrag) {
+    dashTerminal.appendChild(dashFrag);
+    trimLogLines(dashTerminal, 100);
+    const chkDashAutoscroll = document.getElementById('chk-dashboard-autoscroll');
+    if (chkDashAutoscroll && chkDashAutoscroll.checked) {
+      dashTerminal.scrollTop = dashTerminal.scrollHeight;
+    }
+  }
+
   const badge = document.getElementById('logs-count-badge');
   if (badge) badge.innerText = `${logsCount} ${t('unit_lines')}`;
   const dashBadge = document.getElementById('dashboard-logs-count-badge');
   if (dashBadge) dashBadge.innerText = `${logsCount} ${t('unit_lines')}`;
+}
 
-  // Auto-scroll
-  const chkAutoscroll = document.getElementById('chk-autoscroll');
-  if (terminal && chkAutoscroll && chkAutoscroll.checked) {
-    terminal.scrollTop = terminal.scrollHeight;
-  }
-  const chkDashAutoscroll = document.getElementById('chk-dashboard-autoscroll');
-  if (dashTerminal && chkDashAutoscroll && chkDashAutoscroll.checked) {
-    dashTerminal.scrollTop = dashTerminal.scrollHeight;
+function appendLog(line, forcedClass = null) {
+  if (forcedClass) {
+    const terminal = document.getElementById('logs-terminal');
+    const dashTerminal = document.getElementById('dashboard-logs-terminal');
+    if (terminal) {
+      terminal.appendChild(createLogDiv(line, forcedClass));
+      trimLogLines(terminal, MAX_LOG_LINES);
+      const chkAutoscroll = document.getElementById('chk-autoscroll');
+      if (chkAutoscroll && chkAutoscroll.checked) terminal.scrollTop = terminal.scrollHeight;
+    }
+    if (dashTerminal) {
+      dashTerminal.appendChild(createLogDiv(line, forcedClass));
+      trimLogLines(dashTerminal, 100);
+      const chkDashAutoscroll = document.getElementById('chk-dashboard-autoscroll');
+      if (chkDashAutoscroll && chkDashAutoscroll.checked) dashTerminal.scrollTop = dashTerminal.scrollHeight;
+    }
+    logsCount++;
+    const badge = document.getElementById('logs-count-badge');
+    if (badge) badge.innerText = `${logsCount} ${t('unit_lines')}`;
+    const dashBadge = document.getElementById('dashboard-logs-count-badge');
+    if (dashBadge) dashBadge.innerText = `${logsCount} ${t('unit_lines')}`;
+  } else {
+    appendLogBatch([line]);
   }
 }
 

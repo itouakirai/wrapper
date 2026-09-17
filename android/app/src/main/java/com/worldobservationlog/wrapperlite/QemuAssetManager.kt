@@ -1,6 +1,7 @@
 package com.worldobservationlog.wrapperlite
 
 import android.content.Context
+import android.os.Build
 import android.util.Log
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -199,6 +200,32 @@ class QemuAssetManager(private val context: Context) {
             val list = assetManager.list("qemu") ?: return@withContext false
             if (list.isEmpty()) return@withContext false
 
+            val prefs = context.getSharedPreferences("wl_asset_prefs", Context.MODE_PRIVATE)
+            val packageInfo = try {
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                    context.packageManager.getPackageInfo(context.packageName, android.content.pm.PackageManager.PackageInfoFlags.of(0))
+                } else {
+                    @Suppress("DEPRECATION")
+                    context.packageManager.getPackageInfo(context.packageName, 0)
+                }
+            } catch (e: Exception) { null }
+            val currentVersionCode = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+                packageInfo?.longVersionCode ?: 1L
+            } else {
+                @Suppress("DEPRECATION")
+                packageInfo?.versionCode?.toLong() ?: 1L
+            }
+            val lastExtractedVersion = prefs.getLong("extracted_version_code", -1L)
+
+            val qemuExe = getQemuExecutable()
+            val kernel = getKernel()
+            val initramfs = getInitramfs()
+            val disk = getDataDisk()
+            if (lastExtractedVersion == currentVersionCode && qemuExe.exists() && kernel.exists() && initramfs.exists() && disk.exists()) {
+                // Assets already fully extracted and up to date; skip expensive I/O and chmod
+                return@withContext true
+            }
+
             qemuDir.mkdirs()
             binDir.mkdirs()
 
@@ -220,8 +247,8 @@ class QemuAssetManager(private val context: Context) {
             fixPermissionsAndLibraries(qemuDir)
             fixPermissionsAndLibraries(context.filesDir)
 
-            val qemuExe = getQemuExecutable()
-            makeExecutable(qemuExe)
+            val resolvedQemuExe = getQemuExecutable()
+            makeExecutable(resolvedQemuExe)
 
             val launcher = getLauncherExecutable()
             makeExecutable(launcher)
@@ -239,6 +266,8 @@ class QemuAssetManager(private val context: Context) {
             binDir.listFiles()?.forEach { f ->
                 if (f.isFile) makeExecutable(f)
             }
+
+            prefs.edit().putLong("extracted_version_code", currentVersionCode).apply()
             true
         } catch (e: Exception) {
             Log.e(TAG, "Error extracting bundled assets", e)

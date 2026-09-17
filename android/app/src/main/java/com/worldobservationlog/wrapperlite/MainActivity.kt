@@ -8,7 +8,9 @@ import android.content.ServiceConnection
 import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Bundle
+import android.os.Handler
 import android.os.IBinder
+import android.os.Looper
 import android.webkit.JsResult
 import android.webkit.WebChromeClient
 import android.webkit.WebSettings
@@ -21,7 +23,9 @@ import androidx.core.content.ContextCompat
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import org.json.JSONArray
 import org.json.JSONObject
+import java.util.Collections
 
 class MainActivity : AppCompatActivity() {
 
@@ -29,20 +33,49 @@ class MainActivity : AppCompatActivity() {
     private var qemuService: QemuService? = null
     private var isBound = false
 
+    private val logBuffer = Collections.synchronizedList(mutableListOf<String>())
+    private val logHandler = Handler(Looper.getMainLooper())
+    @Volatile
+    private var isFlushScheduled = false
+
+    private val flushLogRunnable = Runnable {
+        flushLogs()
+    }
+
+    private fun queueLog(line: String) {
+        if (line.contains("request: GET /status")) return
+        logBuffer.add(line)
+        if (!isFlushScheduled) {
+            isFlushScheduled = true
+            logHandler.postDelayed(flushLogRunnable, 80)
+        }
+    }
+
+    private fun flushLogs() {
+        isFlushScheduled = false
+        val batch = mutableListOf<String>()
+        synchronized(logBuffer) {
+            if (logBuffer.isNotEmpty()) {
+                batch.addAll(logBuffer)
+                logBuffer.clear()
+            }
+        }
+        if (batch.isEmpty() || isFinishing || isDestroyed) return
+
+        val jsonArray = JSONArray(batch).toString()
+        val js = "if (window.onAndroidLogBatch) { window.onAndroidLogBatch($jsonArray); } else { $jsonArray.forEach(function(l){ window.onAndroidLogEntry(l); }); }"
+        webView.evaluateJavascript(js, null)
+    }
+
     private val connection = object : ServiceConnection {
         override fun onServiceConnected(name: ComponentName?, service: IBinder?) {
             val binder = service as QemuService.LocalBinder
             qemuService = binder.getService()
             isBound = true
 
-            // Attach listeners
+            // Attach listeners with log batching
             qemuService?.onLogListener = { line ->
-                if (!line.contains("request: GET /status")) {
-                    runOnUiThread {
-                        val safeLine = line.replace("\\", "\\\\").replace("'", "\\'").replace("\n", " ")
-                        webView.evaluateJavascript("window.onAndroidLogEntry('$safeLine')", null)
-                    }
-                }
+                queueLog(line)
             }
 
             qemuService?.onStatusListener = { running ->
@@ -168,6 +201,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     override fun onDestroy() {
+        logHandler.removeCallbacks(flushLogRunnable)
         if (isBound) {
             unbindService(connection)
             isBound = false
