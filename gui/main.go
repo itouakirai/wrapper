@@ -770,7 +770,9 @@ func (s *AppState) performLogin(req LoginRequest) (map[string]interface{}, error
 			s.appendLog(line)
 		},
 		func() {
-			s.appendLog("[auth] Apple 2FA requirement detected. Terminating guest process early to prompt for verification code...")
+			s.appendLog("[auth] Apple 2FA requirement detected. Waiting for verification code dispatch...")
+			time.Sleep(3500 * time.Millisecond)
+			s.appendLog("[auth] Terminating guest process to prompt for verification code...")
 			killProcessTree(cmd)
 		},
 	)

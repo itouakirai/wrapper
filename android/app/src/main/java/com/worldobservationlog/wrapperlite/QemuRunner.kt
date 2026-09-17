@@ -243,11 +243,14 @@ class QemuRunner(private val context: Context, private val assetManager: QemuAss
             val checkAndTrigger2FA = { lineText: String ->
                 if (!need2FADetected.get() && is2FALine(lineText)) {
                     if (need2FADetected.compareAndSet(false, true)) {
-                        onLog("[auth] Apple 2FA requirement detected. Terminating QEMU guest early to prompt for verification code...")
+                        onLog("[auth] Apple 2FA requirement detected. Waiting for verification code dispatch...")
                         Thread {
                             try {
+                                // Allow grace period for Apple server to complete 2FA challenge dispatch
+                                Thread.sleep(4000)
+                                onLog("[auth] Terminating QEMU guest to prompt for verification code...")
                                 proc.destroy()
-                                Thread.sleep(300)
+                                Thread.sleep(1000)
                                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O && proc.isAlive) {
                                     proc.destroyForcibly()
                                 }
