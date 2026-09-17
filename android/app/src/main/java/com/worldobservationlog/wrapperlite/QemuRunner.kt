@@ -245,15 +245,18 @@ class QemuRunner(private val context: Context, private val assetManager: QemuAss
                     if (need2FADetected.compareAndSet(false, true)) {
                         onLog("[auth] Apple 2FA requirement detected. Terminating QEMU guest early to prompt for verification code...")
                         try {
-                            proc.destroy()
                             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
                                 proc.destroyForcibly()
+                            } else {
+                                proc.destroy()
                             }
+                            Unit
                         } catch (e: Exception) {
                             Log.e(TAG, "Failed to terminate QEMU process on 2FA detection", e)
                         }
                     }
                 }
+                Unit
             }
 
             val stdoutThread = Thread {
@@ -306,12 +309,15 @@ class QemuRunner(private val context: Context, private val assetManager: QemuAss
     }
 
     fun stop() {
-        process?.let {
+        val proc = process
+        if (proc != null) {
             try {
-                it.destroy()
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                    it.destroyForcibly()
+                    proc.destroyForcibly()
+                } else {
+                    proc.destroy()
                 }
+                Unit
             } catch (e: Exception) {
                 Log.e(TAG, "Error destroying QEMU process", e)
             }
