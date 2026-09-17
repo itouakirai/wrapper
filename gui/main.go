@@ -630,6 +630,84 @@ func (s *AppState) stopService() {
 	killProcessTree(cmd)
 }
 
+type realTimeLoginWriter struct {
+	mu          sync.Mutex
+	buf         bytes.Buffer
+	lineBuf     bytes.Buffer
+	onLine      func(line string)
+	on2FA       func()
+	detected2FA bool
+}
+
+func newRealTimeLoginWriter(onLine func(line string), on2FA func()) *realTimeLoginWriter {
+	return &realTimeLoginWriter{
+		onLine: onLine,
+		on2FA:  on2FA,
+	}
+}
+
+func (w *realTimeLoginWriter) check2FA(text string) {
+	if w.detected2FA {
+		return
+	}
+	if strings.Contains(text, "need2FA: true") ||
+		strings.Contains(text, "2FA: true") ||
+		strings.Contains(text, "2FA code") ||
+		strings.Contains(text, "requiresHSA2VerificationCode") ||
+		strings.Contains(text, "Enter your 2FA code into") {
+		w.detected2FA = true
+		if w.on2FA != nil {
+			go w.on2FA()
+		}
+	}
+}
+
+func (w *realTimeLoginWriter) Write(p []byte) (n int, err error) {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+
+	w.buf.Write(p)
+
+	for _, b := range p {
+		if b == '\n' {
+			line := w.lineBuf.String()
+			w.lineBuf.Reset()
+			trimmed := strings.TrimRight(line, "\r")
+			if strings.TrimSpace(trimmed) != "" && w.onLine != nil {
+				w.onLine(trimmed)
+			}
+			w.check2FA(trimmed)
+		} else {
+			w.lineBuf.WriteByte(b)
+		}
+	}
+
+	// Also check raw chunk directly in case of unbuffered or partial outputs without trailing newline (e.g. "2FA code: ")
+	w.check2FA(string(p))
+
+	return len(p), nil
+}
+
+func (w *realTimeLoginWriter) Flush() {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+
+	if w.lineBuf.Len() > 0 {
+		trimmed := strings.TrimRight(w.lineBuf.String(), "\r")
+		if strings.TrimSpace(trimmed) != "" && w.onLine != nil {
+			w.onLine(trimmed)
+		}
+		w.check2FA(trimmed)
+		w.lineBuf.Reset()
+	}
+}
+
+func (w *realTimeLoginWriter) String() string {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	return w.buf.String()
+}
+
 func (s *AppState) performLogin(req LoginRequest) (map[string]interface{}, error) {
 	bin := s.findLauncher("wrapper-lite-qemu")
 	isQemu := true
@@ -683,23 +761,30 @@ func (s *AppState) performLogin(req LoginRequest) (map[string]interface{}, error
 
 	cmd := exec.CommandContext(ctx, bin, args...)
 	cmd.Dir = s.appDir
-
-	var outBuf bytes.Buffer
-	cmd.Stdout = io.MultiWriter(&outBuf, os.Stdout)
-	cmd.Stderr = io.MultiWriter(&outBuf, os.Stderr)
+	setProcessGroup(cmd)
 
 	s.appendLog(fmt.Sprintf("[auth] Running login command for %s...", req.Username))
 
-	err := cmd.Run()
-	outputStr := outBuf.String()
+	writer := newRealTimeLoginWriter(
+		func(line string) {
+			s.appendLog(line)
+		},
+		func() {
+			s.appendLog("[auth] Apple 2FA requirement detected. Terminating guest process early to prompt for verification code...")
+			killProcessTree(cmd)
+		},
+	)
 
-	// Parse lines for logging
-	lines := strings.Split(outputStr, "\n")
-	for _, l := range lines {
-		if strings.TrimSpace(l) != "" {
-			s.appendLog(l)
-		}
+	cmd.Stdout = io.MultiWriter(writer, os.Stdout)
+	cmd.Stderr = io.MultiWriter(writer, os.Stderr)
+
+	if err := cmd.Start(); err != nil {
+		return validateLoginResult("", err, isQemu, s.appDir, s.qemuDir)
 	}
+
+	err := cmd.Wait()
+	writer.Flush()
+	outputStr := writer.String()
 
 	return validateLoginResult(outputStr, err, isQemu, s.appDir, s.qemuDir)
 }

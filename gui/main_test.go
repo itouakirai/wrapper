@@ -7,7 +7,9 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"sync"
 	"testing"
+	"time"
 )
 
 func TestHasLoginCacheMarkerFile(t *testing.T) {
@@ -343,3 +345,91 @@ func TestValidateLoginResult(t *testing.T) {
 		t.Errorf("expected .login_cached to exist after successful login")
 	}
 }
+
+func TestRealTimeLoginWriter(t *testing.T) {
+	t.Run("Streams lines and accumulates buffer", func(t *testing.T) {
+		var lines []string
+		twoFACalled := false
+
+		w := newRealTimeLoginWriter(
+			func(line string) {
+				lines = append(lines, line)
+			},
+			func() {
+				twoFACalled = true
+			},
+		)
+
+		_, _ = w.Write([]byte("[init] starting guest\n[run] booting kernel\n"))
+		w.Flush()
+
+		if twoFACalled {
+			t.Errorf("expected twoFACalled to be false for normal output")
+		}
+		if len(lines) != 2 {
+			t.Fatalf("expected 2 lines, got %d: %v", len(lines), lines)
+		}
+		if lines[0] != "[init] starting guest" || lines[1] != "[run] booting kernel" {
+			t.Errorf("unexpected lines: %v", lines)
+		}
+		if w.String() != "[init] starting guest\n[run] booting kernel\n" {
+			t.Errorf("unexpected buffer string: %q", w.String())
+		}
+	})
+
+	t.Run("Detects 2FA on line with newline", func(t *testing.T) {
+		var twoFACallCount int
+		var mu sync.Mutex
+		done := make(chan struct{})
+
+		w := newRealTimeLoginWriter(
+			nil,
+			func() {
+				mu.Lock()
+				twoFACallCount++
+				mu.Unlock()
+				close(done)
+			},
+		)
+
+		_, _ = w.Write([]byte("[auth] credentialHandler: {title: Apple ID, message: Code, 2FA: true}\n"))
+		w.Flush()
+
+		select {
+		case <-done:
+		case <-time.After(1 * time.Second):
+			t.Fatal("timed out waiting for 2FA detection")
+		}
+
+		// Write another 2FA indicator, ensure on2FA is called only once
+		_, _ = w.Write([]byte("2FA code: "))
+		w.Flush()
+		time.Sleep(50 * time.Millisecond)
+
+		mu.Lock()
+		defer mu.Unlock()
+		if twoFACallCount != 1 {
+			t.Errorf("expected on2FA to be called exactly once, got %d", twoFACallCount)
+		}
+	})
+
+	t.Run("Detects 2FA on partial chunk without trailing newline", func(t *testing.T) {
+		done := make(chan struct{})
+
+		w := newRealTimeLoginWriter(
+			nil,
+			func() {
+				close(done)
+			},
+		)
+
+		_, _ = w.Write([]byte("2FA code: "))
+
+		select {
+		case <-done:
+		case <-time.After(1 * time.Second):
+			t.Fatal("timed out waiting for 2FA detection on partial chunk")
+		}
+	})
+}
+
