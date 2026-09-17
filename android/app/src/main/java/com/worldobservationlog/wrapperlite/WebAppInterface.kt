@@ -33,16 +33,7 @@ class WebAppInterface(
     fun hasLoginCache(): Boolean {
         val qemuDir = File(context.filesDir, "qemu")
 
-        // 1. Check marker file
-        val markerFiles = listOf(
-            File(context.filesDir, ".login_cached"),
-            File(qemuDir, ".login_cached")
-        )
-        if (markerFiles.any { it.exists() }) {
-            return true
-        }
-
-        // 2. Check loose token files on host filesystem
+        // 1. Check loose token files on host filesystem
         val tokenFiles = listOf(
             File(context.filesDir, "token_cache.json"),
             File(context.filesDir, "DEV_TOKEN"),
@@ -60,7 +51,7 @@ class WebAppInterface(
             return true
         }
 
-        // 3. Check QEMU data disk image (ext4 partition containing tokens)
+        // 2. Check QEMU data disk image (ext4 partition containing tokens)
         val diskCandidates = mutableListOf(
             File(qemuDir, "data.img"),
             File(context.filesDir, "data.img")
@@ -68,14 +59,38 @@ class WebAppInterface(
         serviceProvider()?.assetManager?.getDataDisk()?.let {
             if (!diskCandidates.contains(it)) diskCandidates.add(it)
         }
+        var hasDisk = false
         for (disk in diskCandidates) {
-            if (disk.exists() && disk.isFile && hasTokensInDiskImage(disk)) {
-                markLoginCached()
-                return true
+            if (disk.exists() && disk.isFile) {
+                hasDisk = true
+                if (hasTokensInDiskImage(disk)) {
+                    markLoginCached()
+                    return true
+                }
             }
         }
 
+        // 3. Fallback marker file check only when no disk image is present to inspect
+        if (!hasDisk) {
+            val markerFiles = listOf(
+                File(context.filesDir, ".login_cached"),
+                File(qemuDir, ".login_cached")
+            )
+            if (markerFiles.any { it.exists() }) {
+                return true
+            }
+        } else {
+            clearLoginCached()
+        }
+
         return false
+    }
+
+    private fun clearLoginCached() {
+        try {
+            File(context.filesDir, ".login_cached").delete()
+            File(File(context.filesDir, "qemu"), ".login_cached").delete()
+        } catch (e: Exception) {}
     }
 
     private fun markLoginCached() {

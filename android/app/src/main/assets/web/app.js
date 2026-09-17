@@ -1082,15 +1082,20 @@ async function handleLogin() {
       hasCachedLogin = true;
       appendLog(t('log_login_succeeded'), 'run');
       alert(t('alert_login_succeeded'));
+      refreshPlatformInfo();
     } else if (result.need2FA) {
       prompt2faModal();
     } else {
+      hasCachedLogin = false;
       appendLog(t('log_login_failed', result.message || 'Authentication error'), 'error');
       alert(t('alert_login_failed', result.message || 'Check credentials'));
+      refreshPlatformInfo();
     }
   } catch (err) {
+    hasCachedLogin = false;
     appendLog(t('log_login_failed', err.message), 'error');
     alert(t('alert_login_failed', err.message));
+    refreshPlatformInfo();
   } finally {
     submitBtn.disabled = false;
     progressBox.classList.add('hidden');
@@ -1568,10 +1573,13 @@ window.onAndroidLoginResult = (resultJson) => {
     hasCachedLogin = true;
     appendLog(t('log_login_succeeded'), 'run');
     alert(t('alert_login_succeeded'));
+    refreshPlatformInfo();
   } else if (result.need2FA) {
     prompt2faModal();
   } else {
+    hasCachedLogin = false;
     appendLog(t('log_login_failed', result.message || 'Authentication error'), 'error');
     alert(t('alert_login_failed', result.message || 'Check credentials'));
+    refreshPlatformInfo();
   }
 };

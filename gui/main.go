@@ -701,25 +701,180 @@ func (s *AppState) performLogin(req LoginRequest) (map[string]interface{}, error
 		}
 	}
 
-	if err != nil {
-		if strings.Contains(outputStr, "need2FA: true") || strings.Contains(outputStr, "2FA code") {
-			return map[string]interface{}{
-				"success": false,
-				"need2FA": true,
-				"message": "Two-factor authentication required",
-			}, nil
-		}
+	return validateLoginResult(outputStr, err, isQemu, s.appDir, s.qemuDir)
+}
+
+func validateLoginResult(outputStr string, cmdErr error, isQemu bool, appDir, qemuDir string) (map[string]interface{}, error) {
+	// 1. Check for 2FA requirement first (applies regardless of exit code)
+	if strings.Contains(outputStr, "need2FA: true") ||
+		strings.Contains(outputStr, "2FA: true") ||
+		strings.Contains(outputStr, "2FA code") ||
+		strings.Contains(outputStr, "requiresHSA2VerificationCode") {
 		return map[string]interface{}{
 			"success": false,
-			"message": fmt.Sprintf("Login failed: %v", err),
+			"need2FA": true,
+			"message": "Two-factor authentication required",
 		}, nil
 	}
 
-	_ = os.WriteFile(filepath.Join(s.appDir, ".login_cached"), []byte(time.Now().Format(time.RFC3339)), 0644)
+	// 2. Check for process/OS execution error
+	if cmdErr != nil {
+		clearLoginCacheMarkerPaths(appDir, qemuDir)
+		errMsg := extractErrorMessage(outputStr)
+		if errMsg == "" {
+			errMsg = fmt.Sprintf("Login failed: %v", cmdErr)
+		}
+		return map[string]interface{}{
+			"success":       false,
+			"message":       errMsg,
+			"hasLoginCache": false,
+		}, nil
+	}
+
+	// 3. Inspect outputStr for explicit success and failure signals.
+	// In QEMU mode, the guest VM powers off via 'poweroff -f' when lite exits,
+	// causing QEMU to return exit code 0 even when lite exited with failure inside the guest.
+	hasSuccess := strings.Contains(outputStr, "login successful") ||
+		strings.Contains(outputStr, "login complete") ||
+		strings.Contains(outputStr, "account info cached successfully") ||
+		strings.Contains(outputStr, "Tokens cached")
+
+	hasFailure := strings.Contains(outputStr, "login failed") ||
+		strings.Contains(outputStr, "auth failed") ||
+		strings.Contains(outputStr, "auth error") ||
+		strings.Contains(outputStr, "failed to cache account info") ||
+		strings.Contains(outputStr, "invalid login format") ||
+		strings.Contains(outputStr, "2FA code timeout") ||
+		strings.Contains(outputStr, "aborting login")
+
+	if hasFailure || !hasSuccess {
+		clearLoginCacheMarkerPaths(appDir, qemuDir)
+		errMsg := extractErrorMessage(outputStr)
+		if errMsg == "" {
+			errMsg = "Login failed: incorrect username or password, or server rejected authentication"
+		}
+		return map[string]interface{}{
+			"success":       false,
+			"message":       errMsg,
+			"hasLoginCache": false,
+		}, nil
+	}
+
+	// 4. Verify tokens on the actual storage medium
+	if isQemu {
+		diskCandidates := []string{
+			filepath.Join(qemuDir, "data.img"),
+			filepath.Join(".", "qemu", "data.img"),
+			filepath.Join(appDir, "data.img"),
+		}
+		diskFound := false
+		tokensFound := false
+		for _, p := range diskCandidates {
+			if fi, e := os.Stat(p); e == nil && !fi.IsDir() {
+				diskFound = true
+				if hasTokensInDiskImage(p) {
+					tokensFound = true
+					break
+				}
+			}
+		}
+		if diskFound && !tokensFound {
+			clearLoginCacheMarkerPaths(appDir, qemuDir)
+			return map[string]interface{}{
+				"success":       false,
+				"message":       "Login finished but token signatures were not found in data disk image",
+				"hasLoginCache": false,
+			}, nil
+		}
+	} else {
+		nativeFiles := []string{
+			filepath.Join(appDir, "rootfs", "data", "token_cache.json"),
+			filepath.Join(appDir, "rootfs", "data", "MUSIC_TOKEN"),
+			filepath.Join(".", "rootfs", "data", "token_cache.json"),
+		}
+		if !fileExistsAny(nativeFiles) {
+			clearLoginCacheMarkerPaths(appDir, qemuDir)
+			return map[string]interface{}{
+				"success":       false,
+				"message":       "Login finished but tokens were not found in rootfs data directory",
+				"hasLoginCache": false,
+			}, nil
+		}
+	}
+
+	_ = os.WriteFile(filepath.Join(appDir, ".login_cached"), []byte(time.Now().Format(time.RFC3339)), 0644)
 	return map[string]interface{}{
-		"success": true,
-		"message": "Login succeeded! Tokens cached.",
+		"success":       true,
+		"message":       "Login succeeded! Tokens cached.",
+		"hasLoginCache": true,
 	}, nil
+}
+
+func extractErrorMessage(output string) string {
+	lines := strings.Split(output, "\n")
+	// Pass 1: Look for high-specificity messages (server message, auth error, detailed failures)
+	for i := len(lines) - 1; i >= 0; i-- {
+		line := strings.TrimSpace(lines[i])
+		if line == "" {
+			continue
+		}
+		lower := strings.ToLower(line)
+		if strings.Contains(lower, "server message:") {
+			parts := strings.SplitN(line, "server message:", 2)
+			if len(parts) == 2 && strings.TrimSpace(parts[1]) != "" {
+				return strings.TrimSpace(parts[1])
+			}
+		}
+		if strings.Contains(lower, "auth error:") {
+			parts := strings.SplitN(line, "auth error:", 2)
+			if len(parts) == 2 && strings.TrimSpace(parts[1]) != "" {
+				return "Authentication error: " + strings.TrimSpace(parts[1])
+			}
+		}
+		if strings.Contains(lower, "auth failed:") {
+			parts := strings.SplitN(line, "auth failed:", 2)
+			if len(parts) == 2 && strings.TrimSpace(parts[1]) != "" {
+				return "Authentication failed: " + strings.TrimSpace(parts[1])
+			}
+		}
+		if strings.Contains(lower, "2fa code timeout") {
+			return "Two-factor authentication timed out"
+		}
+		if strings.Contains(lower, "invalid login format") {
+			return "Invalid login format: expected username:password"
+		}
+	}
+
+	// Pass 2: General failure messages
+	for i := len(lines) - 1; i >= 0; i-- {
+		line := strings.TrimSpace(lines[i])
+		if line == "" {
+			continue
+		}
+		lower := strings.ToLower(line)
+		if strings.Contains(lower, "login failed") {
+			return "Login failed: incorrect username or password"
+		}
+		if strings.Contains(lower, "failed to cache account info") {
+			return "Login failed: could not cache account tokens"
+		}
+	}
+	return ""
+}
+
+func clearLoginCacheMarkerPaths(appDir, qemuDir string) {
+	markers := []string{
+		filepath.Join(appDir, ".login_cached"),
+		filepath.Join(qemuDir, ".login_cached"),
+		filepath.Join(".", ".login_cached"),
+	}
+	for _, m := range markers {
+		_ = os.Remove(m)
+	}
+}
+
+func (s *AppState) clearLoginCacheMarker() {
+	clearLoginCacheMarkerPaths(s.appDir, s.qemuDir)
 }
 
 func (s *AppState) streamOutput(r io.Reader) {
@@ -864,16 +1019,7 @@ func (s *AppState) checkQemuFiles() QemuCheckResult {
 }
 
 func (s *AppState) hasLoginCache() bool {
-	// 1. Check marker file
-	if fileExistsAny([]string{
-		filepath.Join(s.appDir, ".login_cached"),
-		filepath.Join(s.qemuDir, ".login_cached"),
-		filepath.Join(".", ".login_cached"),
-	}) {
-		return true
-	}
-
-	// 2. Check native rootfs token cache files
+	// 1. Check native rootfs token cache files
 	nativeFiles := []string{
 		filepath.Join(s.appDir, "rootfs", "data", "token_cache.json"),
 		filepath.Join(s.appDir, "rootfs", "data", "DEV_TOKEN"),
@@ -886,16 +1032,41 @@ func (s *AppState) hasLoginCache() bool {
 		return true
 	}
 
-	// 3. Check data.img for tokens/database signatures
+	// 2. Check data.img for tokens/database signatures
 	diskCandidates := []string{
 		filepath.Join(s.qemuDir, "data.img"),
 		filepath.Join(".", "qemu", "data.img"),
+		filepath.Join(s.appDir, "data.img"),
 	}
+	hasDisk := false
 	for _, p := range diskCandidates {
-		if hasTokensInDiskImage(p) {
-			return true
+		if fi, err := os.Stat(p); err == nil && !fi.IsDir() {
+			hasDisk = true
+			if hasTokensInDiskImage(p) {
+				return true
+			}
 		}
 	}
+
+	// 3. Fallback marker file check:
+	// Only treat .login_cached as true if no actual storage (disk image or rootfs/data) is present to verify against.
+	// If a disk image is present but contains NO token signatures, any .login_cached is stale/bogus and must be cleaned up.
+	hasRootfsData := false
+	if fi, err := os.Stat(filepath.Join(s.appDir, "rootfs", "data")); err == nil && fi.IsDir() {
+		hasRootfsData = true
+	}
+	if !hasDisk && !hasRootfsData {
+		if fileExistsAny([]string{
+			filepath.Join(s.appDir, ".login_cached"),
+			filepath.Join(s.qemuDir, ".login_cached"),
+			filepath.Join(".", ".login_cached"),
+		}) {
+			return true
+		}
+	} else if hasDisk {
+		s.clearLoginCacheMarker()
+	}
+
 	return false
 }
 
@@ -914,8 +1085,8 @@ func hasTokensInDiskImage(path string) bool {
 	}
 
 	var overlap []byte
-	// Scan up to 64MB (entire standard data.img partition)
-	for i := 0; i < 64; i++ {
+	// Scan up to 256MB partition
+	for i := 0; i < 256; i++ {
 		n, err := f.Read(buf)
 		if n <= 0 || err != nil {
 			break

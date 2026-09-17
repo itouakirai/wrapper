@@ -57,7 +57,8 @@ fi
 if [ -s /data/.lite-qemu-args ]; then
     echo "[init] wrapper-lite QEMU guest (custom args from file)"
     LITE_ARGS_FILE=/data/.lite-qemu-args /system/bin/lite
-    echo "[init] lite exited, powering off..."
+    lite_rc=$?
+    echo "[init] lite exited with code $lite_rc, powering off..."
     /bin/busybox poweroff -f
 else
     echo "[init] wrapper-lite QEMU guest booting..."

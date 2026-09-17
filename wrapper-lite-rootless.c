@@ -95,8 +95,9 @@ int main(int argc, char *argv[], char *envp[]) {
     }
 
     if (child_proc > 0) {
-        wait(NULL);
-        return 0;
+        int status = 0;
+        waitpid(child_proc, &status, 0);
+        return WIFEXITED(status) ? WEXITSTATUS(status) : 1;
     }
 
     if (mkdir("./rootfs/dev", 0755) != 0 && errno != EEXIST) {
