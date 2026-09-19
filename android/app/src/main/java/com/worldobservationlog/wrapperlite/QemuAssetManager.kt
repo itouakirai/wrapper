@@ -46,25 +46,41 @@ class QemuAssetManager(private val context: Context) {
     }
 
     fun getKernel(): File {
-        return File(qemuDir, "vmlinuz-lite-qemu")
+        val candidates = listOf(
+            File(qemuDir, "vmlinuz-lite-qemu"),
+            File(context.filesDir, "vmlinuz-lite-qemu"),
+            File(binDir, "vmlinuz-lite-qemu")
+        )
+        return candidates.firstOrNull { it.exists() } ?: File(qemuDir, "vmlinuz-lite-qemu")
     }
 
     fun getInitramfs(): File {
-        val canonical = File(qemuDir, "lite-initramfs.cpio.gz")
-        if (canonical.exists()) return canonical
+        val canonicalCandidates = listOf(
+            File(qemuDir, "lite-initramfs.cpio.gz"),
+            File(context.filesDir, "lite-initramfs.cpio.gz"),
+            File(binDir, "lite-initramfs.cpio.gz")
+        )
+        val found = canonicalCandidates.firstOrNull { it.exists() }
+        if (found != null) return found
 
-        val stripped = File(qemuDir, "lite-initramfs.cpio")
-        if (stripped.exists()) {
+        val strippedCandidates = listOf(
+            File(qemuDir, "lite-initramfs.cpio"),
+            File(context.filesDir, "lite-initramfs.cpio"),
+            File(binDir, "lite-initramfs.cpio")
+        )
+        val stripped = strippedCandidates.firstOrNull { it.exists() }
+        if (stripped != null) {
+            val targetGz = File(stripped.parentFile, "lite-initramfs.cpio.gz")
             try {
-                if (stripped.renameTo(canonical)) {
-                    return canonical
+                if (stripped.renameTo(targetGz)) {
+                    return targetGz
                 }
             } catch (e: Exception) {
                 Log.w(TAG, "Failed to auto-rename lite-initramfs.cpio to lite-initramfs.cpio.gz", e)
             }
             return stripped
         }
-        return canonical
+        return File(qemuDir, "lite-initramfs.cpio.gz")
     }
 
     fun getDataDisk(): File {
@@ -105,10 +121,11 @@ class QemuAssetManager(private val context: Context) {
 
     fun checkStatus(): Map<String, Boolean> {
         val qemuExe = getQemuExecutable()
-        val qemuDir = qemuExe.parentFile ?: binDir
-        val pixmanLib = File(qemuDir, "libpixman-1.so")
-        // QEMU binary is only considered ready if the executable exists AND critical libraries are bundled
-        val librariesReady = pixmanLib.exists() || File(binDir, "libpixman-1.so").exists()
+        val exeParent = qemuExe.parentFile ?: binDir
+        val hasSoInBin = binDir.listFiles { _, name -> name.endsWith(".so") || name.contains(".so.") }?.isNotEmpty() == true
+        val hasSoInParent = exeParent.listFiles { _, name -> name.endsWith(".so") || name.contains(".so.") }?.isNotEmpty() == true
+        val pixmanLib = File(exeParent, "libpixman-1.so").exists() || File(binDir, "libpixman-1.so").exists()
+        val librariesReady = pixmanLib || hasSoInBin || hasSoInParent || (qemuExe.exists() && qemuExe.length() > 5000000)
         val qemuBin = qemuExe.exists() && librariesReady
         val launcher = getLauncherExecutable().exists()
         val kernel = getKernel().exists()

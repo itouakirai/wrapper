@@ -90,6 +90,11 @@ class MainActivity : AppCompatActivity() {
             // Extract bundled assets if present
             CoroutineScope(Dispatchers.IO).launch {
                 qemuService?.assetManager?.extractBundledAssetsIfNeeded()
+                runOnUiThread {
+                    if (!isFinishing && !isDestroyed) {
+                        webView.evaluateJavascript("if (typeof checkQemuPackageStatus === 'function') { checkQemuPackageStatus(); }", null)
+                    }
+                }
             }
         }
 
@@ -136,8 +141,8 @@ class MainActivity : AppCompatActivity() {
         webView.webViewClient = object : WebViewClient() {
             override fun onPageFinished(view: WebView?, url: String?) {
                 super.onPageFinished(view, url)
-                // Initialize Android mode in UI
-                webView.evaluateJavascript("detectPlatform()", null)
+                // Initialize Android mode in UI and check QEMU status
+                webView.evaluateJavascript("detectPlatform(); if (typeof checkQemuPackageStatus === 'function') { checkQemuPackageStatus(); }", null)
             }
         }
 

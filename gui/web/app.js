@@ -43,7 +43,8 @@ const translations = {
     btn_start: "Start Service",
     btn_stop: "Stop Service",
     btn_restart: "Restart",
-    btn_open_browser: "Open API",
+    btn_open_browser: "Project Home",
+    btn_project_home: "Project Home",
     lbl_endpoint: "Endpoint:",
     btn_copy_url: "Copy URL",
     tab_dashboard: "Dashboard",
@@ -94,7 +95,7 @@ const translations = {
     hint_host_port: "The port you connect to on this device (default: 12340).",
     lbl_proxy: "HTTP / SOCKS5 Proxy (Optional)",
     ph_proxy: "e.g. http://127.0.0.1:7890 or socks5://127.0.0.1:1080",
-    hint_proxy: "Forward requests through a proxy for region unlocking.",
+    hint_proxy: "Forward requests through a proxy server.",
     title_qemu_perf: "QEMU & Performance",
     lbl_runtime_mode: "Runtime Mode",
     opt_engine_qemu: "QEMU Virtual Guest (Recommended for Windows/macOS/Android)",
@@ -221,7 +222,8 @@ const translations = {
     btn_start: "启动服务",
     btn_stop: "停止服务",
     btn_restart: "重启服务",
-    btn_open_browser: "打开 API",
+    btn_open_browser: "项目主页",
+    btn_project_home: "项目主页",
     lbl_endpoint: "服务接口:",
     btn_copy_url: "复制地址",
     tab_dashboard: "仪表盘",
@@ -272,7 +274,7 @@ const translations = {
     hint_host_port: "本设备连接的端口（默认：12340）。",
     lbl_proxy: "HTTP / SOCKS5 代理（可选）",
     ph_proxy: "例如 http://127.0.0.1:7890 或 socks5://127.0.0.1:1080",
-    hint_proxy: "通过代理服务器转发网络请求以实现跨区解锁。",
+    hint_proxy: "通过代理服务器转发网络请求。",
     title_qemu_perf: "QEMU 与性能设置",
     lbl_runtime_mode: "运行模式",
     opt_engine_qemu: "QEMU 虚拟客机（推荐 Windows/macOS/Android）",
@@ -574,7 +576,7 @@ function isLinuxX86_64Platform() {
 
 // Platform Detection
 async function detectPlatform() {
-  if (isAndroidApp) {
+  if (isAndroidApp || typeof window.Android !== 'undefined') {
     platformInfo.isAndroid = true;
     platformInfo.os = 'android';
     platformInfo.arch = 'aarch64';
@@ -584,6 +586,9 @@ async function detectPlatform() {
       } catch (e) {}
     }
     updatePlatformUI();
+    if (lastQemuData) {
+      updateQemuChecklist(lastQemuData);
+    }
     return;
   }
 
@@ -643,6 +648,12 @@ function updatePlatformUI() {
   }
   if (engineDetail) {
     engineDetail.innerText = currentEngine === 'native' ? t('hint_engine_host') : t('hint_engine_vm');
+  }
+
+  const isAndroid = platformInfo.isAndroid || isAndroidApp || (typeof window.Android !== 'undefined');
+  const launcherItem = document.getElementById('chk-launcher');
+  if (launcherItem && isAndroid) {
+    launcherItem.classList.add('hidden');
   }
 }
 
@@ -832,17 +843,16 @@ async function handleRestart() {
   setTimeout(handleStart, 1500);
 }
 
-function openServiceUrl() {
-  const host = document.getElementById('cfg-host').value.trim() || '127.0.0.1';
-  const port = document.getElementById('cfg-host-port').value.trim() || '12340';
-  const url = `http://${host === '0.0.0.0' ? '127.0.0.1' : host}:${port}/status`;
-  
-  if (isAndroidApp && window.Android.openBrowser) {
+function openProjectHome() {
+  const url = 'https://github.com/itouakirai/wrapper';
+  if ((isAndroidApp || typeof window.Android !== 'undefined') && window.Android && window.Android.openBrowser) {
     window.Android.openBrowser(url);
   } else {
     window.open(url, '_blank');
   }
 }
+
+const openServiceUrl = openProjectHome;
 
 function copyServiceUrl() {
   const host = document.getElementById('cfg-host').value.trim() || '127.0.0.1';
@@ -1145,11 +1155,18 @@ async function submit2faCode() {
 
 // QEMU Package Manager
 async function checkQemuPackageStatus() {
-  if (isAndroidApp && window.Android.checkQemuStatus) {
-    try {
-      const data = JSON.parse(window.Android.checkQemuStatus());
-      updateQemuChecklist(data);
-    } catch (e) {}
+  if (isAndroidApp || typeof window.Android !== 'undefined') {
+    if (window.Android && window.Android.checkQemuStatus) {
+      try {
+        const raw = window.Android.checkQemuStatus();
+        if (raw && raw !== '{}') {
+          const data = JSON.parse(raw);
+          updateQemuChecklist(data);
+        }
+      } catch (e) {
+        console.warn('Android QEMU status parse error:', e);
+      }
+    }
     return;
   }
 
@@ -1164,18 +1181,32 @@ async function checkQemuPackageStatus() {
   }
 }
 
+window.checkQemuPackageStatus = checkQemuPackageStatus;
+
 function updateQemuChecklist(data) {
-  if (!data) return;
+  if (!data || Object.keys(data).length === 0) return;
   lastQemuData = data;
+
+  const isAndroid = isAndroidApp || platformInfo.isAndroid || (typeof window.Android !== 'undefined');
+
+  // On Android, the C++ host launcher (wrapper-lite-qemu) is not needed because the Android app runs QEMU directly via QemuRunner
+  const launcherItem = document.getElementById('chk-launcher');
+  if (launcherItem && isAndroid) {
+    launcherItem.classList.add('hidden');
+  }
+
   const items = [
-    { id: 'launcher', ok: data.launcher, name: 'wrapper-lite-qemu' },
-    { id: 'kernel', ok: data.kernel, name: 'vmlinuz-lite-qemu' },
-    { id: 'initramfs', ok: data.initramfs, name: 'lite-initramfs.cpio.gz' },
-    { id: 'disk', ok: data.disk, name: 'data.img' },
-    { id: 'qemubin', ok: data.qemuBin, name: 'qemu-system-x86_64' }
+    ...(!isAndroid ? [{ id: 'launcher', ok: !!data.launcher, name: 'wrapper-lite-qemu' }] : []),
+    { id: 'kernel', ok: !!data.kernel, name: 'vmlinuz-lite-qemu' },
+    { id: 'initramfs', ok: !!data.initramfs, name: 'lite-initramfs.cpio.gz' },
+    { id: 'disk', ok: !!data.disk, name: 'data.img' },
+    { id: 'qemubin', ok: !!data.qemuBin, name: 'qemu-system-x86_64' }
   ];
 
-  let allReady = true;
+  let allReady = typeof data.allPresent === 'boolean'
+    ? data.allPresent
+    : (!!data.kernel && !!data.initramfs && !!data.disk && !!data.qemuBin && (isAndroid || !!data.launcher));
+
   items.forEach(item => {
     const icon = document.getElementById(`icon-${item.id}`);
     const detail = document.getElementById(`detail-${item.id}`);
@@ -1185,7 +1216,9 @@ function updateQemuChecklist(data) {
         detail.innerText = t('status_present_verified');
         detail.style.color = 'var(--success-color)';
       } else {
-        allReady = false;
+        if (typeof data.allPresent !== 'boolean') {
+          allReady = false;
+        }
         icon.innerText = '❌';
         detail.innerText = t('status_missing_required');
         detail.style.color = 'var(--danger-color)';

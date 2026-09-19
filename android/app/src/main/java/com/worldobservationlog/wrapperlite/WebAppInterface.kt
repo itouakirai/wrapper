@@ -271,10 +271,12 @@ class WebAppInterface(
         }
     }
 
+    private val fallbackAssetManager by lazy { QemuAssetManager(context) }
+
     @JavascriptInterface
     fun checkQemuStatus(): String {
-        val s = serviceProvider() ?: return "{}"
-        val statusMap = s.assetManager.checkStatus()
+        val assetManager = serviceProvider()?.assetManager ?: fallbackAssetManager
+        val statusMap = assetManager.checkStatus()
         val json = JSONObject()
         statusMap.forEach { (k, v) -> json.put(k, v) }
         return json.toString()
@@ -282,9 +284,9 @@ class WebAppInterface(
 
     @JavascriptInterface
     fun downloadQemuPackage() {
-        val s = serviceProvider() ?: return
+        val assetManager = serviceProvider()?.assetManager ?: fallbackAssetManager
         CoroutineScope(Dispatchers.Main).launch {
-            s.assetManager.downloadQemuPackage { pct, speed, status ->
+            assetManager.downloadQemuPackage { pct, speed, status ->
                 evaluateJs("window.onAndroidDownloadProgress($pct, '$speed', '$status')")
             }
         }
