@@ -633,15 +633,14 @@ int main(int argc, char* argv[]) {
         {"Access-Control-Allow-Origin", "*"},
         {"Access-Control-Allow-Methods", "GET, POST, OPTIONS"},
         {"Access-Control-Allow-Headers", "*"},
-        {"Access-Control-Allow-Private-Network", "true"}
+        {"Access-Control-Allow-Private-Network", "true"},
+        {"Access-Control-Max-Age", "86400"}
     });
 
+    /* CORS headers come from set_default_headers above; httplib's
+       set_header appends (multimap), so re-setting them here would send
+       duplicates that browsers reject. */
     svr.set_pre_routing_handler([](const httplib::Request& req, httplib::Response& res) {
-        res.set_header("Access-Control-Allow-Origin", "*");
-        res.set_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
-        res.set_header("Access-Control-Allow-Headers", "*");
-        res.set_header("Access-Control-Allow-Private-Network", "true");
-
         if (req.method == "OPTIONS") {
             res.status = 204;
             return httplib::Server::HandlerResponse::Handled;
