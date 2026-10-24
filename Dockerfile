@@ -10,7 +10,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         build-essential cmake unzip git ca-certificates aria2 \
     && rm -rf /var/lib/apt/lists/*
 RUN aria2c -o ndk.zip https://dl.google.com/android/repository/android-ndk-r${NDK_VERSION}b-linux.zip \
-    && unzip -q ndk.zip && mv android-ndk-r${NDK_VERSION}b android-ndk-r23b && rm ndk.zip
+    && unzip -q ndk.zip && rm ndk.zip
 COPY CMakeLists.txt import.h ./
 COPY lite ./lite
 COPY rootfs ./rootfs
@@ -23,7 +23,7 @@ RUN npm ci
 COPY web ./
 RUN npm run build
 
-FROM rust:1.85-bookworm AS wrapper
+FROM rust:1.90-bookworm AS wrapper
 WORKDIR /src
 COPY Cargo.toml Cargo.lock ./
 COPY crates ./crates
