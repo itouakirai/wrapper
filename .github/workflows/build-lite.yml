@@ -151,7 +151,9 @@ jobs:
           - name: windows-x86_64
             os: windows-2022
           - name: macos-aarch64
-            os: macos-15
+            # The generic label is served by the largest runner pool; a
+            # pinned version (macos-14/15) queued for 15+ minutes.
+            os: macos-latest
     runs-on: ${{ matrix.os }}
     timeout-minutes: 45
     steps:
