@@ -81,7 +81,29 @@ const char* get_m3u8_play(unsigned long adam) {
     return nullptr;
 }
 
-static char* get_content_key_impl(const std::string& adamId, const std::string& keyUri) {
+/* The library hands back owning shared_ptrs (getPersistentKey / decryptContext)
+   that nothing else drops, so every call used to leak a few KB.  owned_sp
+   releases its strong reference on scope exit, also when the library throws. */
+static void release_owned_sp(struct shared_ptr* sp) {
+    if (sp->ctrl_blk) _ZNSt6__ndk119__shared_weak_count16__release_sharedEv(sp->ctrl_blk);
+    sp->obj = nullptr;
+    sp->ctrl_blk = nullptr;
+}
+struct owned_sp {
+    struct shared_ptr sp = {nullptr, nullptr};
+    owned_sp() = default;
+    owned_sp(const owned_sp&) = delete;
+    owned_sp& operator=(const owned_sp&) = delete;
+    ~owned_sp() { release_owned_sp(&sp); }
+    void reset() { release_owned_sp(&sp); }
+    void take(owned_sp& o) { reset(); sp = o.sp; o.sp = {nullptr, nullptr}; }
+    bool empty() const { return !sp.obj; }
+};
+typedef owned_sp persistent_key;
+
+static void fetch_persistent_key(const std::string& adamId, const std::string& keyUri,
+                                 persistent_key& out) {
+    out.reset();
     union std_string defaultId = new_std_string(adamId.c_str());
     union std_string keyUriStr = new_std_string(keyUri.c_str());
     union std_string keyFormat = new_std_string("com.apple.streamingkeydelivery");
@@ -89,15 +111,14 @@ static char* get_content_key_impl(const std::string& adamId, const std::string& 
     union std_string serverUri = new_std_string("https://play.itunes.apple.com/WebObjects/MZPlay.woa/music/fps");
     union std_string protocolType = new_std_string("simplified");
     union std_string fpsCertStr = new_std_string(fairplayCert);
-
-    struct shared_ptr persistK;
-    memset(&persistK, 0, sizeof(persistK));
     _ZN21SVFootHillSessionCtrl16getPersistentKeyERKNSt6__ndk112basic_stringIcNS0_11char_traitsIcEENS0_9allocatorIcEEEES8_S8_S8_S8_S8_S8_S8_(
-        &persistK, FHinstance, &defaultId, &defaultId, &keyUriStr, &keyFormat,
+        &out.sp, FHinstance, &defaultId, &defaultId, &keyUriStr, &keyFormat,
         &keyFormatVer, &serverUri, &protocolType, &fpsCertStr);
+}
 
-    if (!persistK.obj) return nullptr;
-    union std_string* pkey = (union std_string*)persistK.obj;
+static char* get_content_key_impl(const persistent_key& pk) {
+    if (pk.empty()) return nullptr;
+    union std_string* pkey = (union std_string*)pk.sp.obj;
     const char* data = std_string_data(pkey);
     if (!data || !*data) return nullptr;
     return strdup(data);
@@ -153,50 +174,70 @@ static void setup_r1_hook(void) {
 }
 
 static void* preshareCtx = nullptr;
-static void* getKdContext(const std::string& adam, const std::string& uri) {
+static owned_sp preshareOwner;      /* keeps the preshare SVFootHillPContext alive */
+static persistent_key preshareKey;  /* the persistent key it was derived from */
+
+/* `pk` is fetched here when empty, otherwise reused.  For adam "0" the context
+   (and its key) stay owned by the file-level statics; otherwise the owning
+   pointer is handed back through `owner` and the caller drops it once the
+   template has been captured. */
+static void* getKdContext(const std::string& adam, const std::string& uri,
+                          persistent_key& pk, owned_sp& owner) {
     uint8_t isPreshare = (adam == "0");
     if (isPreshare && preshareCtx) return preshareCtx;
     LOG_INFO("adamId: %s, uri: %s", adam.c_str(), uri.c_str());
 
-    union std_string defaultId = new_std_string(adam.c_str());
-    union std_string keyUri = new_std_string(uri.c_str());
-    union std_string keyFormat = new_std_string("com.apple.streamingkeydelivery");
-    union std_string keyFormatVer = new_std_string("1");
-    union std_string serverUri = new_std_string("https://play.itunes.apple.com/WebObjects/MZPlay.woa/music/fps");
-    union std_string protocolType = new_std_string("simplified");
-    union std_string fpsCert = new_std_string(fairplayCert);
+    if (pk.empty()) fetch_persistent_key(adam, uri, pk);
+    if (pk.empty()) return nullptr;
 
-    struct shared_ptr persistK = {.obj = nullptr};
-    _ZN21SVFootHillSessionCtrl16getPersistentKeyERKNSt6__ndk112basic_stringIcNS0_11char_traitsIcEENS0_9allocatorIcEEEES8_S8_S8_S8_S8_S8_S8_(
-        &persistK, FHinstance, &defaultId, &defaultId, &keyUri, &keyFormat,
-        &keyFormatVer, &serverUri, &protocolType, &fpsCert);
-    if (!persistK.obj) return nullptr;
-
-    struct shared_ptr SVFootHillPContext = {.obj = nullptr, .ctrl_blk = nullptr};
+    owned_sp pctx;
     _ZN21SVFootHillSessionCtrl14decryptContextERKNSt6__ndk112basic_stringIcNS0_11char_traitsIcEENS0_9allocatorIcEEEERKN11SVDecryptor15SVDecryptorTypeERKb(
-        &SVFootHillPContext, FHinstance, (union std_string*)persistK.obj);
-    if (!SVFootHillPContext.obj) return nullptr;
+        &pctx.sp, FHinstance, (union std_string*)pk.sp.obj);
+    if (pctx.empty()) return nullptr;
 
-    void* kdContext = *_ZNK18SVFootHillPContext9kdContextEv(SVFootHillPContext.obj);
-    if (kdContext && isPreshare) preshareCtx = kdContext;
+    void* kdContext = *_ZNK18SVFootHillPContext9kdContextEv(pctx.sp.obj);
+    if (!kdContext) return nullptr;
+    if (isPreshare) {
+        preshareCtx = kdContext;
+        preshareOwner.take(pctx);
+        preshareKey.take(pk);
+    } else {
+        owner.take(pctx);
+    }
     return kdContext;
+}
+
+/* Drop everything we hold on the library's contexts, then reset its cache. */
+static void release_decrypt_ctxs() {
+    preshareCtx = nullptr;
+    preshareOwner.reset();
+    preshareKey.reset();
+    _ZN21SVFootHillSessionCtrl16resetAllContextsEv(FHinstance);
 }
 
 static void refresh_decrypt_ctx() {
     uint8_t autom = 1;
     _ZN22SVPlaybackLeaseManager12requestLeaseERKb(leaseMgr, &autom);
-    _ZN21SVFootHillSessionCtrl16resetAllContextsEv(FHinstance);
-    preshareCtx = nullptr;
-    preshareCtx = getKdContext("0", "skd://itunes.apple.com/P000000000/s1/e1");
+    release_decrypt_ctxs();
+    persistent_key pk;
+    owned_sp unused;
+    getKdContext("0", "skd://itunes.apple.com/P000000000/s1/e1", pk, unused);
     LOG_WARN("refreshed context");
 }
 
+/* `pk` is the key already fetched for this request; after a refresh it is
+   stale, so it is dropped and fetched again. */
 static int capture_content_template(const std::string& adam, const std::string& uri,
+                                     persistent_key& pk,
                                      uint8_t* cap_ctx, uint8_t* cap_state,
                                      uint64_t* rcx, uint64_t* rax, uint64_t* rdx,
                                      uint64_t* r9, uint64_t* rbp, int with_refresh) {
-    if (with_refresh) refresh_decrypt_ctx();
-    void* kdPtr = (void*)getKdContext(adam, uri);
+    if (with_refresh) {
+        refresh_decrypt_ctx();
+        pk.reset();
+    }
+    owned_sp owner;  /* a captured template is a copy: drop the context once taken */
+    void* kdPtr = getKdContext(adam, uri, pk, owner);
     if (!kdPtr || !*(void**)kdPtr) { LOG_WARN("getKdContext failed"); return -1; }
     void* kd = *(void**)kdPtr;
     setup_r1_hook();
@@ -237,14 +278,16 @@ std::string get_key(const std::string& adamId, const std::string& uri,
                     uint64_t* rcx, uint64_t* rax, uint64_t* rdx,
                     uint64_t* r9, uint64_t* rbp) {
     std::lock_guard<std::mutex> lock(g_playback_mutex);
-    char* ck = get_content_key_impl(adamId, uri);
+    persistent_key pk;
+    fetch_persistent_key(adamId, uri, pk);
+    char* ck = get_content_key_impl(pk);
     if (!ck) return "";
     std::string result(ck);
     free(ck);
     if (ctx && state) {
-        if (capture_content_template(adamId, uri, ctx, state, rcx, rax, rdx, r9, rbp, 0) != 0) {
+        if (capture_content_template(adamId, uri, pk, ctx, state, rcx, rax, rdx, r9, rbp, 0) != 0) {
             LOG_INFO("capture without refresh failed, retry with refresh");
-            if (capture_content_template(adamId, uri, ctx, state, rcx, rax, rdx, r9, rbp, 1) != 0) {
+            if (capture_content_template(adamId, uri, pk, ctx, state, rcx, rax, rdx, r9, rbp, 1) != 0) {
                 LOG_WARN("content template capture failed");
             }
         }

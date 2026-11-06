@@ -269,6 +269,9 @@ IMPORT_EXTERN union std_string *_ZNK17storeservicescore13PlaybackAsset9URLString
 IMPORT_EXTERN union std_string *_ZNK17storeservicescore14RequestContext20storeFrontIdentifierERKNSt6__ndk110shared_ptrINS_6URLBagEEE(void *, void *, struct shared_ptr *);
 
 IMPORT_EXTERN void _ZN21SVFootHillSessionCtrl16resetAllContextsEv(void *);
+/* std::__ndk1::__shared_weak_count::__release_shared() -- drops one strong ref of a
+   shared_ptr whose ctrl_blk is passed as `this`. */
+IMPORT_EXTERN void _ZNSt6__ndk119__shared_weak_count16__release_sharedEv(void *);
 IMPORT_EXTERN int __android_log_print(int prio, const char *tag, const char *fmt, ...);
 IMPORT_EXTERN int __android_log_write(int prio, const char *tag, const char *text);
 
