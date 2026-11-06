@@ -7,11 +7,29 @@ on:
   pull_request:
   workflow_dispatch:
 
+permissions:
+  contents: read
+
+# A newer push to the same branch / PR supersedes the running build; tag
+# (release) builds always finish.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ !startsWith(github.ref, 'refs/tags/') }}
+
 env:
   CARGO_TERM_COLOR: always
   NDK_DIR: android-ndk-r23b
+  NDK_URL: https://dl.google.com/android/repository/android-ndk-r23b-linux.zip
   # Package version: the tag name for releases, "nightly" otherwise.
   PKG_VERSION: ${{ startsWith(github.ref, 'refs/tags/v') && github.ref_name || 'nightly' }}
+  # Caches are written by the default branch only: tags and PRs can read
+  # them, but what they would write is visible to themselves alone.
+  SAVE_CACHE: ${{ github.ref == format('refs/heads/{0}', github.event.repository.default_branch) }}
+  # Bump to collect the QEMU binaries bundled in the packages again.
+  QEMU_BUNDLE_REV: '1'
+  HOMEBREW_NO_AUTO_UPDATE: '1'
+  HOMEBREW_NO_INSTALL_CLEANUP: '1'
+  HOMEBREW_NO_INSTALLED_DEPENDENTS_CHECK: '1'
 
 jobs:
   check:
@@ -21,23 +39,27 @@ jobs:
       matrix:
         os: [ ubuntu-22.04, windows-2022 ]
     runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: clippy
       - uses: Swatinem/rust-cache@v2
+        with:
+          save-if: ${{ env.SAVE_CACHE == 'true' }}
       - run: cargo clippy --all-targets -- -D warnings
       - run: cargo test
 
   web:
     name: Build web panel
     runs-on: ubuntu-22.04
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v7
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
-          node-version: 22
+          node-version: 24
           cache: npm
           cache-dependency-path: web/package-lock.json
       - run: npm ci && npm run build
@@ -50,14 +72,15 @@ jobs:
   lite:
     name: Build lite (Android NDK)
     runs-on: ubuntu-22.04
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v7
-      - name: Install build tools
-        run: sudo apt-get update && sudo apt-get install -y build-essential cmake unzip aria2
+      # cmake, make and unzip come with the runner image. Only the NDK's LLVM
+      # toolchain (compilers + sysroot) is used, so only that is unpacked.
       - name: Download Android NDK r23b
         run: |
-          aria2c -o ndk.zip https://dl.google.com/android/repository/android-ndk-r23b-linux.zip
-          unzip -q ndk.zip
+          curl -fsSL --retry 3 -o ndk.zip "$NDK_URL"
+          unzip -q ndk.zip "$NDK_DIR/toolchains/llvm/*" && rm ndk.zip
       - name: Build lite
         run: |
           cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
@@ -75,6 +98,7 @@ jobs:
     name: Build QEMU guest + native smoke test
     needs: lite
     runs-on: ubuntu-22.04
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v7
       - uses: actions/download-artifact@v8
@@ -85,9 +109,11 @@ jobs:
         with:
           targets: x86_64-unknown-linux-musl
       - uses: Swatinem/rust-cache@v2
+        with:
+          save-if: ${{ env.SAVE_CACHE == 'true' }}
       - name: Build static wrapper
         run: |
-          sudo apt-get update && sudo apt-get install -y musl-tools
+          sudo apt-get update && sudo apt-get install -y --no-install-recommends musl-tools
           cargo build --release --target x86_64-unknown-linux-musl -p wrapper
       - name: Smoke test the rootless sandbox and the native agent
         run: |
@@ -111,7 +137,9 @@ jobs:
 
   package:
     name: Package (${{ matrix.name }})
-    needs: [ web, lite, guest ]
+    needs: [ web, guest ]
+    # PRs stop at the checks and the guest smoke test.
+    if: github.event_name != 'pull_request'
     strategy:
       fail-fast: false
       matrix:
@@ -125,6 +153,7 @@ jobs:
           - name: macos-aarch64
             os: macos-15
     runs-on: ${{ matrix.os }}
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@v7
       - uses: actions/download-artifact@v8
@@ -137,24 +166,83 @@ jobs:
           path: dist/qemu
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
+        with:
+          save-if: ${{ env.SAVE_CACHE == 'true' }}
       - name: Build wrapper
         run: cargo build --release -p wrapper
 
+      # QEMU binary, firmware and libraries are collected into qemu-bundle/
+      # once and cached: installing QEMU (apt / brew / choco) is by far the
+      # slowest part of a package build.
+      - name: Restore QEMU bundle
+        id: qemu-cache
+        uses: actions/cache/restore@v6
+        with:
+          path: qemu-bundle
+          key: qemu-bundle-${{ matrix.name }}-${{ env.QEMU_BUNDLE_REV }}
       - name: Install QEMU (Linux)
-        if: runner.os == 'Linux'
-        run: sudo apt-get update && sudo apt-get install -y qemu-system-x86 seabios ipxe-qemu
+        if: runner.os == 'Linux' && steps.qemu-cache.outputs.cache-hit != 'true'
+        # QEMU runs headless (-display none): no GUI, audio or extra block modules.
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends qemu-system-x86 seabios ipxe-qemu
       - name: Install QEMU (macOS)
-        if: runner.os == 'macOS'
+        if: runner.os == 'macOS' && steps.qemu-cache.outputs.cache-hit != 'true'
         run: brew install qemu
       - name: Install QEMU (Windows)
-        if: runner.os == 'Windows'
+        if: runner.os == 'Windows' && steps.qemu-cache.outputs.cache-hit != 'true'
         shell: pwsh
         run: choco install qemu -y --no-progress
+      - name: Collect QEMU binary and firmware (Linux/macOS)
+        if: runner.os != 'Windows' && steps.qemu-cache.outputs.cache-hit != 'true'
+        shell: bash
+        run: |
+          B=qemu-bundle
+          mkdir -p "$B"
+          cp "$(command -v qemu-system-x86_64)" "$B/"
+          if [[ "${{ runner.os }}" == "macOS" ]]; then
+            cp -R "$(brew --prefix)/share/qemu/"* "$B/"
+          else
+            cp -R /usr/share/qemu/. "$B/"
+            cp -R /usr/share/seabios/. "$B/" || true
+            cp -R /usr/lib/ipxe/qemu/. "$B/" || true
+            # shared libraries (wrapper adds qemu/bin to LD_LIBRARY_PATH)
+            ldd "$(command -v qemu-system-x86_64)" | awk '/=> \// {print $3}' | sort -u | \
+              while read -r so; do cp -n "$so" "$B/"; done
+            # accel/device modules (QEMU_MODULE_DIR points at qemu/bin)
+            MODDIR="$(find /usr/lib /usr/lib64 -type f -name 'accel-*.so' 2>/dev/null | xargs -r dirname | sort -u | head -1 || true)"
+            if [ -n "$MODDIR" ]; then cp -R "$MODDIR/." "$B/"; fi
+          fi
+      - name: Collect QEMU binary and firmware (Windows)
+        if: runner.os == 'Windows' && steps.qemu-cache.outputs.cache-hit != 'true'
+        shell: pwsh
+        run: |
+          $q = Get-Command qemu-system-x86_64.exe -ErrorAction SilentlyContinue
+          $qemuDir = if ($q) { Split-Path $q.Source } else {
+            @('C:/Program Files/qemu', 'C:/ProgramData/chocolatey/bin') |
+              Where-Object { Test-Path (Join-Path $_ 'qemu-system-x86_64.exe') } | Select-Object -First 1
+          }
+          if (-not $qemuDir) { Write-Error 'qemu-system-x86_64.exe not found'; exit 1 }
+          $dst = 'qemu-bundle'
+          New-Item -ItemType Directory -Force $dst | Out-Null
+          Copy-Item (Join-Path $qemuDir 'qemu-system-x86_64.exe') $dst
+          Get-ChildItem (Join-Path $qemuDir '*.dll') -File | ForEach-Object { Copy-Item $_.FullName $dst }
+          $share = Join-Path $qemuDir 'share'
+          if (Test-Path $share) { Copy-Item -Recurse -Force (Join-Path $share '*') $dst }
+      # Never cache (or ship) a bundle without the emulator in it.
+      - name: Check QEMU bundle
+        shell: bash
+        run: ls qemu-bundle/qemu-system-x86_64* && du -sh qemu-bundle
+      - name: Save QEMU bundle
+        if: steps.qemu-cache.outputs.cache-hit != 'true' && env.SAVE_CACHE == 'true'
+        uses: actions/cache/save@v6
+        with:
+          path: qemu-bundle
+          key: ${{ steps.qemu-cache.outputs.cache-primary-key }}
 
       - name: Assemble package
         shell: bash
         run: |
           mkdir -p dist/qemu/bin
+          cp -R qemu-bundle/. dist/qemu/bin/
           cp README.md LICENSE dist/
           if [[ "${{ runner.os }}" == "Windows" ]]; then
             cp target/release/wrapper.exe dist/
@@ -170,43 +258,6 @@ jobs:
       - name: Unpack the native rootfs (linux-x86_64)
         if: matrix.name == 'linux-x86_64'
         run: tar xzf rootfs.tar.gz -C dist && rm rootfs.tar.gz
-
-      - name: Copy QEMU binary and firmware (Linux/macOS)
-        if: runner.os != 'Windows'
-        shell: bash
-        run: |
-          set +e  # best effort: report but never fail
-          cp "$(command -v qemu-system-x86_64)" dist/qemu/bin/
-          if [[ "${{ runner.os }}" == "macOS" ]]; then
-            cp -R "$(brew --prefix)/share/qemu/"* dist/qemu/bin/
-          else
-            cp -R /usr/share/qemu/. dist/qemu/bin/
-            cp -R /usr/share/seabios/. dist/qemu/bin/
-            cp -R /usr/lib/ipxe/qemu/. dist/qemu/bin/
-            # shared libraries (wrapper adds qemu/bin to LD_LIBRARY_PATH)
-            ldd "$(command -v qemu-system-x86_64)" | awk '/=> \// {print $3}' | sort -u | \
-              while read -r so; do cp -n "$so" dist/qemu/bin/; done
-            # accel/device modules (QEMU_MODULE_DIR points at qemu/bin)
-            MODDIR="$(find /usr/lib /usr/lib64 -type f -name 'accel-*.so' 2>/dev/null | xargs -r dirname | sort -u | head -1)"
-            [ -n "$MODDIR" ] && cp -R "$MODDIR/." dist/qemu/bin/
-          fi
-          exit 0
-
-      - name: Copy QEMU binary and firmware (Windows)
-        if: runner.os == 'Windows'
-        shell: pwsh
-        run: |
-          $q = Get-Command qemu-system-x86_64.exe -ErrorAction SilentlyContinue
-          $qemuDir = if ($q) { Split-Path $q.Source } else {
-            @('C:/Program Files/qemu', 'C:/ProgramData/chocolatey/bin') |
-              Where-Object { Test-Path (Join-Path $_ 'qemu-system-x86_64.exe') } | Select-Object -First 1
-          }
-          if (-not $qemuDir) { Write-Error 'qemu-system-x86_64.exe not found'; exit 1 }
-          $dst = 'dist/qemu/bin'
-          Copy-Item (Join-Path $qemuDir 'qemu-system-x86_64.exe') $dst
-          Get-ChildItem (Join-Path $qemuDir '*.dll') -File | ForEach-Object { Copy-Item $_.FullName $dst }
-          $share = Join-Path $qemuDir 'share'
-          if (Test-Path $share) { Copy-Item -Recurse -Force (Join-Path $share '*') $dst }
 
       # Archive here: artifacts drop the executable bit, tarballs keep it.
       - name: Archive package
@@ -232,7 +283,9 @@ jobs:
   android:
     name: Package (android-aarch64) + APK
     needs: [ web, guest ]
+    if: github.event_name != 'pull_request'
     runs-on: ubuntu-22.04
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@v7
       - uses: actions/download-artifact@v8
@@ -245,13 +298,14 @@ jobs:
           path: dist/qemu
       - name: Download Android NDK r23b
         run: |
-          sudo apt-get update && sudo apt-get install -y aria2 unzip
-          aria2c -o ndk.zip https://dl.google.com/android/repository/android-ndk-r23b-linux.zip
-          unzip -q ndk.zip
+          curl -fsSL --retry 3 -o ndk.zip "$NDK_URL"
+          unzip -q ndk.zip "$NDK_DIR/toolchains/llvm/*" && rm ndk.zip
       - uses: dtolnay/rust-toolchain@stable
         with:
           targets: aarch64-linux-android
       - uses: Swatinem/rust-cache@v2
+        with:
+          save-if: ${{ env.SAVE_CACHE == 'true' }}
       - name: Build wrapper for Android
         run: |
           TC="$PWD/$NDK_DIR/toolchains/llvm/prebuilt/linux-x86_64/bin"
@@ -273,7 +327,7 @@ jobs:
           path: wrapper-*.tar.gz
           compression-level: 0
 
-      - uses: actions/setup-java@v4
+      - uses: actions/setup-java@v6
         with:
           distribution: temurin
           java-version: '17'
@@ -297,6 +351,7 @@ jobs:
     if: startsWith(github.ref, 'refs/tags/v')
     needs: [ check, package, android ]
     runs-on: ubuntu-22.04
+    timeout-minutes: 15
     permissions:
       contents: write
     steps:
