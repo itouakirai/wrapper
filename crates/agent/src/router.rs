@@ -161,7 +161,8 @@ impl Agent {
         Ok(Forwarded { body, code, account: inst.id.clone() })
     }
 
-    /// Forwards to the given candidates in order with the retry policy.
+    /// Forwards to the given candidates in order with the retry policy. Every
+    /// attempt is counted against the account that made it.
     pub async fn forward_with_retry(
         &self,
         candidates: Vec<Arc<Instance>>,
@@ -177,11 +178,14 @@ impl Agent {
         let mut last: Option<Forwarded> = None;
         let mut last_err = None;
         let n = candidates.len();
+        let endpoint = path.trim_start_matches('/');
         for (i, inst) in candidates.into_iter().enumerate().take(MAX_ATTEMPTS) {
             if i > 0 && Instant::now() > deadline {
                 break;
             }
-            match self.forward(&inst, method.clone(), path, query, body.clone()).await {
+            let res = self.forward(&inst, method.clone(), path, query, body.clone()).await;
+            self.stats.record_attempt(&inst.id, endpoint, matches!(&res, Ok(f) if f.code == CODE_OK));
+            match res {
                 Ok(f) if f.code == CODE_OK || i + 1 == n || !should_retry(path, f.code) => return Ok(f),
                 Ok(f) => {
                     tracing::info!(source = %inst.id, "{path} failed with code {}; trying another account", f.code);

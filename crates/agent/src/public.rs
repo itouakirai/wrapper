@@ -35,7 +35,7 @@ use crate::api::{CodeRequest, Envelope, InstanceState, LoginRequest, LoginState,
 use crate::health::Verdict;
 use crate::login::{wait_settled, LoginError, LoginSession};
 use crate::settings::{mask_username, public_ref, random_hex, sha256_hex};
-use crate::stats::{AccountStats, StatsSummary};
+use crate::stats::{AccountSummary, StatsSummary};
 
 /// Logins one address may start per [`WINDOW`].
 const LOGIN_LIMIT: usize = 6;
@@ -185,7 +185,7 @@ struct PublicAccount {
     verdict: Option<Verdict>,
     degraded: bool,
     since: i64,
-    usage: AccountStats,
+    usage: AccountSummary,
 }
 
 #[derive(Serialize)]

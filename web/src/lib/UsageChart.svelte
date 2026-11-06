@@ -1,14 +1,15 @@
 <script>
   import { t } from './i18n.svelte.js';
-  import { ENDPOINTS, total, fmt, dayLabel } from './usage.js';
+  import { ENDPOINTS, total, okCount, fmt, dayLabel } from './usage.js';
 
-  /** `daily`: [{day, counts}] oldest first (the last 30 days). */
-  let { daily = [] } = $props();
+  /** `daily`: [{day, counts}] oldest first (the last 30 days). `height`: plot px. */
+  let { daily = [], height = 140 } = $props();
 
   const H = 120;
   const W = 600;
   const GAP = 2;
   const values = $derived(daily.map((d) => total(d.counts)));
+  const oks = $derived(daily.map((d) => okCount(d.counts)));
   const max = $derived(Math.max(1, ...values));
   // A round axis maximum: 1, 2 or 5 times a power of ten.
   const top = $derived.by(() => {
@@ -17,20 +18,19 @@
   });
   const bw = $derived(daily.length ? W / daily.length : W);
   const empty = $derived(values.every((v) => v === 0));
+  const anyFail = $derived(values.some((v, i) => v > oks[i]));
 
   let hover = $state(null);
   let box = $state(null);
 
-  function bar(v) {
-    const h = v ? Math.max(2, (v / top) * H) : 0;
-    return { h, y: H - h };
-  }
+  const px = (v) => (v ? Math.max(2, (v / top) * H) : 0);
 
-  /** Bar with 4px rounded top corners, square at the baseline. */
-  function path(x, w, y, h) {
+  /** Bar from `y0` (bottom) up `h`; rounded top corners when `round`. */
+  function path(x, w, y0, h, round) {
     if (h <= 0) return '';
-    const r = Math.min(4, w / 2, h);
-    return `M${x},${H}V${y + r}Q${x},${y} ${x + r},${y}H${x + w - r}Q${x + w},${y} ${x + w},${y + r}V${H}Z`;
+    const y = y0 - h;
+    const r = round ? Math.min(4, w / 2, h) : 0;
+    return `M${x},${y0}V${y + r}Q${x},${y} ${x + r},${y}H${x + w - r}Q${x + w},${y} ${x + w},${y + r}V${y0}Z`;
   }
 
   function move(e) {
@@ -41,13 +41,23 @@
 </script>
 
 <div class="chart" bind:this={box} role="img" aria-label={t('usage.chartLabel')} onpointermove={move} onpointerleave={() => (hover = null)}>
-  <div class="axis-top small muted">{fmt(top)}</div>
-  <svg viewBox="0 0 {W} {H}" preserveAspectRatio="none" aria-hidden="true">
+  <div class="axis-top small muted">
+    <span>{fmt(top)}</span>
+    {#if anyFail}
+      <span class="legend"><i class="sw ok"></i>{t('usage.ok')}<i class="sw fail"></i>{t('usage.failed')}</span>
+    {/if}
+  </div>
+  <svg viewBox="0 0 {W} {H}" preserveAspectRatio="none" aria-hidden="true" style="height: {height}px">
     <line x1="0" x2={W} y1={H / 2} y2={H / 2} class="grid" />
     <line x1="0" x2={W} y1="0" y2="0" class="grid" />
     {#each daily as d, i (d.day)}
-      {@const b = bar(values[i])}
-      <path d={path(i * bw + GAP / 2, bw - GAP, b.y, b.h)} class="bar" class:dim={hover && hover.i !== i} />
+      {@const all = px(values[i])}
+      {@const ok = values[i] ? (all * oks[i]) / values[i] : 0}
+      {@const x = i * bw + GAP / 2}
+      <g class:dim={hover && hover.i !== i}>
+        <path d={path(x, bw - GAP, H, ok, ok >= all)} class="bar" />
+        <path d={path(x, bw - GAP, H - ok, all - ok, true)} class="bar fail" />
+      </g>
     {/each}
     <line x1="0" x2={W} y1={H} y2={H} class="base" />
   </svg>
@@ -63,15 +73,17 @@
   {/if}
   {#if hover}
     {@const d = daily[hover.i]}
-    <div class="tip" style="left: {Math.min(Math.max(hover.x, 80), (box?.clientWidth || 0) - 80)}px">
+    <div class="tip" style="left: {Math.min(Math.max(hover.x, 90), (box?.clientWidth || 0) - 90)}px">
       <div class="tip-head">{dayLabel(d.day, { weekday: 'short', month: 'short', day: 'numeric' })} · {fmt(values[hover.i])}</div>
       {#each ENDPOINTS as ep (ep)}
         {#if d.counts[ep]}
           <div class="tip-row">
             <span class="mono">/{ep}</span>
-            <span>{fmt(d.counts[ep].ok)}{#if d.counts[ep].fail} <span class="fail">+{fmt(d.counts[ep].fail)} {t('usage.failed')}</span>{/if}</span>
+            <span>{fmt(d.counts[ep].ok)}{#if d.counts[ep].fail} <span class="fail-txt">+{fmt(d.counts[ep].fail)} {t('usage.failed')}</span>{/if}</span>
           </div>
         {/if}
+      {:else}
+        <div class="muted">{t('usage.noneDay')}</div>
       {/each}
     </div>
   {/if}
@@ -87,16 +99,23 @@
   svg {
     display: block;
     width: 100%;
-    height: 140px;
     overflow: visible;
   }
 
   .bar {
     fill: var(--info);
+  }
+
+  .bar.fail {
+    fill: var(--err);
+    opacity: 0.75;
+  }
+
+  g {
     transition: opacity 0.12s;
   }
 
-  .bar.dim {
+  g.dim {
     opacity: 0.45;
   }
 
@@ -116,6 +135,32 @@
     position: absolute;
     top: 0;
     left: 0;
+    right: 0;
+    display: flex;
+    justify-content: space-between;
+  }
+
+  .legend {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+  }
+
+  .sw {
+    display: inline-block;
+    width: 8px;
+    height: 8px;
+    border-radius: 2px;
+    margin-left: 6px;
+  }
+
+  .sw.ok {
+    background: var(--info);
+  }
+
+  .sw.fail {
+    background: var(--err);
+    opacity: 0.75;
   }
 
   .axis-x {
@@ -135,7 +180,7 @@
     position: absolute;
     top: 0;
     transform: translateX(-50%);
-    min-width: 160px;
+    min-width: 170px;
     padding: 8px 10px;
     border-radius: 9px;
     background: var(--surface);
@@ -158,7 +203,7 @@
     font-variant-numeric: tabular-nums;
   }
 
-  .fail {
-    color: var(--muted);
+  .fail-txt {
+    color: var(--err);
   }
 </style>

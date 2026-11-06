@@ -136,14 +136,21 @@ async fn retries_on_instance_failure_but_not_on_bad_request() {
     let good_hits = Arc::new(AtomicUsize::new(0));
     let bad = fake_lite(500, bad_hits.clone()).await;
     let good = fake_lite(0, good_hits.clone()).await;
-    add_running(&agent, "bad@x.y", "jp", bad);
-    add_running(&agent, "good@x.y", "jp", good);
+    let bad_id = add_running(&agent, "bad@x.y", "jp", bad);
+    let good_id = add_running(&agent, "good@x.y", "jp", good);
 
     for _ in 0..6 {
         let (_, body) = call(&agent, get_req("/m3u8?adamId=1")).await;
         assert_eq!(body["code"], 0, "a 500 from one instance must fall through to the other");
     }
     assert_eq!(good_hits.load(Ordering::SeqCst), 6);
+    // The request counts once, as served; each attempt counts on its account.
+    let s = agent.stats.summary();
+    assert_eq!(s.total["m3u8"].ok, 6);
+    assert_eq!(s.total["m3u8"].fail, 0);
+    assert_eq!(agent.stats.account(&good_id).total["m3u8"].ok, 6);
+    let bad = agent.stats.account(&bad_id).total.get("m3u8").copied().unwrap_or_default();
+    assert_eq!(bad.fail as usize, bad_hits.load(Ordering::SeqCst));
 
     let agent = test_agent("noretry", None);
     let h1 = Arc::new(AtomicUsize::new(0));
@@ -553,6 +560,9 @@ async fn served_requests_are_counted_per_account() {
     assert_eq!(data["accounts"][&ok]["today"]["m3u8"]["ok"], 2);
     assert_eq!(data["summary"]["total"]["m3u8"], json!({"ok": 2, "fail": 1}));
     assert!(data["summary"]["total"].get("key").is_none());
+    assert_eq!(data["summary"]["unserved"]["m3u8"]["fail"], 1);
+    assert_eq!(data["accounts"][&ok]["daily"].as_array().unwrap().len(), crate::stats::KEEP_DAYS as usize);
+    assert!(data["accounts"][&ok]["lastOk"].is_i64());
     assert_eq!(data["summary"]["daily"].as_array().unwrap().len(), crate::stats::KEEP_DAYS as usize);
 }
 

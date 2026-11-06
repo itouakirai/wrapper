@@ -177,11 +177,12 @@ async fn route(agent: &Agent, path: &str, adam_id: &str, method: Method, raw: Op
     let endpoint = path.trim_start_matches('/');
     match agent.forward_with_retry(candidates, method, path, raw.as_deref(), body).await {
         Ok(f) => {
-            agent.stats.record(Some(&f.account), endpoint, f.code == CODE_OK);
+            agent.stats.record_request(endpoint, f.code == CODE_OK, false);
             LiteBody { body: f.body, code: f.code, cacheable: is_cacheable(path) }.into_response()
         }
         Err(e) => {
-            agent.stats.record(None, endpoint, false);
+            let unserved = matches!(e, crate::router::RouteError::NoInstance);
+            agent.stats.record_request(endpoint, false, unserved);
             Envelope::fail(e.to_string()).into_response()
         }
     }
