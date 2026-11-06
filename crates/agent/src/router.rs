@@ -2,7 +2,7 @@
 //! instance, retrying on another account when the failure may be
 //! instance-specific.
 
-use std::collections::{HashMap, HashSet};
+use std::collections::HashSet;
 use std::sync::atomic::Ordering;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
@@ -13,7 +13,7 @@ use reqwest::Method;
 
 use crate::agent::{Agent, Instance};
 use crate::api::{envelope_code, InstanceState, CODE_OK};
-use crate::apple::{region_supports_lang, Kind};
+use crate::apple::{CatalogItem, Kind};
 
 const MAX_ATTEMPTS: usize = 3;
 const RETRY_BUDGET: Duration = Duration::from_secs(45);
@@ -66,8 +66,10 @@ impl Agent {
             .collect()
     }
 
-    /// Accounts whose storefront can serve `adam_id`, least busy first.
-    pub async fn candidates(&self, adam_id: &str) -> Vec<Arc<Instance>> {
+    /// Accounts whose storefront can serve `adam_id`, least busy first. With
+    /// `lyrics`, only storefronts whose catalog reports lyrics for the song are
+    /// kept when there are any (see `filter_by_catalog`).
+    pub async fn candidates(&self, adam_id: &str, lyrics: bool) -> Vec<Arc<Instance>> {
         let mut serving = self.serving();
         serving.shuffle(&mut rand::thread_rng());
         let regions: HashSet<String> = serving.iter().map(|i| i.region()).collect();
@@ -75,23 +77,41 @@ impl Agent {
         let mut picked = if regions.len() <= 1 || adam_id == "0" {
             serving
         } else {
-            self.filter_by_catalog(serving, &regions, adam_id).await
+            self.filter_by_catalog(serving, &regions, adam_id, lyrics).await
         };
         picked.sort_by_key(|i| i.in_flight.load(Ordering::Relaxed));
         picked
     }
 
+    /// Keeps the accounts whose storefront has the item (songs, then music
+    /// videos). For a lyrics request the storefronts whose catalog says
+    /// `hasLyrics` are preferred; when none does (or Apple stops sending the
+    /// field) every storefront with the song stays, so an account still
+    /// answers with the real result. `language` and `script` play no part in
+    /// routing: they are forwarded to lite untouched.
     async fn filter_by_catalog(
         &self,
         serving: Vec<Arc<Instance>>,
         regions: &HashSet<String>,
         adam_id: &str,
+        lyrics: bool,
     ) -> Vec<Arc<Instance>> {
         for kind in [Kind::Song, Kind::MusicVideo] {
-            let probes = regions.iter().map(|r| async move { (r.clone(), self.apple.available(kind, r, adam_id).await) });
+            let probes = regions.iter().map(|r| async move { (r.clone(), self.apple.lookup(kind, r, adam_id).await) });
             let results: Vec<_> = futures_util::future::join_all(probes).await;
             let errors = results.iter().filter(|(_, r)| r.is_err()).count();
-            let ok: HashSet<String> = results.into_iter().filter_map(|(r, v)| v.ok().filter(|v| *v).map(|_| r)).collect();
+            let items: Vec<(String, CatalogItem)> =
+                results.into_iter().filter_map(|(r, v)| v.ok().map(|v| (r, v))).collect();
+            let regions_where = |pred: fn(&CatalogItem) -> bool| -> HashSet<String> {
+                items.iter().filter(|(_, i)| pred(i)).map(|(r, _)| r.clone()).collect()
+            };
+            let mut ok = regions_where(|i| i.available);
+            if lyrics {
+                let with_lyrics = regions_where(|i| i.has_lyrics);
+                if !with_lyrics.is_empty() {
+                    ok = with_lyrics;
+                }
+            }
             if !ok.is_empty() {
                 return serving.into_iter().filter(|i| ok.contains(&i.region())).collect();
             }
@@ -103,48 +123,6 @@ impl Agent {
             }
         }
         Vec::new()
-    }
-
-    /// Prefers an account whose storefront has lyrics for the song in
-    /// `language`; `None` when probing finds nothing.
-    ///
-    /// Two tiers, like wrapper-manager: regions whose store lists the
-    /// language (a region without it may serve the lyrics but not their
-    /// translations) are probed first, the others only if none of those has
-    /// the lyrics.
-    pub async fn lyrics_candidate(&self, adam_id: &str, language: &str, script: &str) -> Option<Arc<Instance>> {
-        let serving = self.serving();
-        if serving.len() <= 1 {
-            return None;
-        }
-        // One probe per region, using any account of that region.
-        let mut by_region: HashMap<String, Vec<Arc<Instance>>> = HashMap::new();
-        for i in serving {
-            by_region.entry(i.region()).or_default().push(i);
-        }
-        let langs = self.apple.storefront_langs().await;
-        let (preferred, others): (Vec<&String>, Vec<&String>) = by_region
-            .keys()
-            .partition(|r| langs.as_deref().is_some_and(|l| region_supports_lang(l, r, language)));
-        for tier in [preferred, others] {
-            let probes = tier.into_iter().map(|region| {
-                let insts = &by_region[region];
-                async move {
-                    let token = self.layout().read_token(&insts[0].id, "MUSIC_TOKEN");
-                    let ok = !token.is_empty() && self.apple.has_lyrics(region, adam_id, language, script, &token).await;
-                    (region, ok)
-                }
-            });
-            let hits: Vec<&String> = futures_util::future::join_all(probes)
-                .await
-                .into_iter()
-                .filter_map(|(r, ok)| ok.then_some(r))
-                .collect();
-            if let Some(region) = hits.choose(&mut rand::thread_rng()) {
-                return by_region[*region].iter().min_by_key(|i| i.in_flight.load(Ordering::Relaxed)).cloned();
-            }
-        }
-        None
     }
 
     /// Sends one request to one lite instance.

@@ -173,7 +173,7 @@ fn is_cacheable(path: &str) -> bool {
 }
 
 async fn route(agent: &Agent, path: &str, adam_id: &str, method: Method, raw: Option<String>, body: Bytes) -> Response {
-    let candidates = agent.candidates(adam_id).await;
+    let candidates = agent.candidates(adam_id, path == "/lyrics").await;
     let endpoint = path.trim_start_matches('/');
     match agent.forward_with_retry(candidates, method, path, raw.as_deref(), body).await {
         Ok(f) => {
@@ -219,20 +219,10 @@ async fn key(State(a): State<AppState>, RawQuery(raw): RawQuery, Query(q): Query
 }
 
 async fn lyrics(State(a): State<AppState>, RawQuery(raw): RawQuery, Query(q): Query<HashMap<String, String>>) -> Response {
-    let Some(adam) = param(&q, "adamId") else {
-        return Envelope::fail("missing adamId").into_response();
-    };
-    let language = param(&q, "language").unwrap_or("en");
-    let script = param(&q, "script").unwrap_or("");
-    if let Some(inst) = a.lyrics_candidate(adam, language, script).await {
-        if let Ok(f) = a.forward(&inst, Method::GET, "/lyrics", raw.as_deref(), Bytes::new()).await {
-            if f.code == CODE_OK {
-                a.stats.record(Some(&f.account), "lyrics", true);
-                return LiteBody { body: f.body, code: f.code, cacheable: true }.into_response();
-            }
-        }
+    match param(&q, "adamId") {
+        Some(adam) => route(&a, "/lyrics", adam, Method::GET, raw, Bytes::new()).await,
+        None => Envelope::fail("missing adamId").into_response(),
     }
-    route(&a, "/lyrics", adam, Method::GET, raw, Bytes::new()).await
 }
 
 async fn license(State(a): State<AppState>, body: Bytes) -> Response {

@@ -157,11 +157,11 @@ For `/m3u8`, `/key`, `/webplayback`, `/license`:
 4. Retry on another candidate (max 3 attempts, 45 s budget) unless the lite
    code is 400, or 404 for `/lyrics`.
 
-`/lyrics` first prefers an account whose storefront actually has lyrics in the
-requested language (HEAD probe with that account's music token). Storefronts
-that list the language (Apple's `/v1/storefronts`, `supportedLanguageTags`) are
-probed first, because another store may have the lyrics but not their
-translations; the rest only if none of those has them.
+`/lyrics` uses the same candidates, but keeps only the storefronts whose
+catalog entry says `hasLyrics` (`data[0].attributes.hasLyrics` of the same
+probe, so no extra request). If none does, every storefront that has the song
+stays. `language` and `script` are forwarded to lite untouched and play no part
+in routing.
 
 ### Statistics
 
