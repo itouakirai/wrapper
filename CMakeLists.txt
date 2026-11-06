@@ -16,6 +16,10 @@ project(wrapper-lite VERSION 1.0.0 LANGUAGES C CXX)
 
 include(FetchContent)
 
+# cJSON and Dobby declare cmake_minimum_required() below 3.5, which CMake 4
+# rejects; let them configure with the 3.5 policies (ignored by older CMake).
+set(CMAKE_POLICY_VERSION_MINIMUM 3.5)
+
 FetchContent_Declare(
     cjson
     GIT_REPOSITORY https://github.com/DaveGamble/cJSON.git
