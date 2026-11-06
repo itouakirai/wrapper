@@ -545,7 +545,9 @@ async fn events(State(g): State<AppState>) -> impl IntoResponse {
         let ev = ev.ok()?;
         Some(Ok::<_, Infallible>(SseEvent::default().json_data(ev).ok()?))
     });
-    Sse::new(stream).keep_alive(KeepAlive::default())
+    // Reverse proxies (nginx) buffer responses by default, which holds the
+    // stream back; this tells them not to.
+    ([("x-accel-buffering", "no")], Sse::new(stream).keep_alive(KeepAlive::default()))
 }
 
 async fn download(State(g): State<AppState>) -> Response {
@@ -905,6 +907,19 @@ mod tests {
         let (status, headers) = (res.status(), res.headers().clone());
         let bytes = http_body_util::BodyExt::collect(res.into_body()).await.unwrap().to_bytes();
         (status, headers, serde_json::from_slice(&bytes).unwrap_or(Value::Null))
+    }
+
+    #[tokio::test]
+    async fn event_stream_is_not_buffered_by_proxies() {
+        use tower::ServiceExt;
+        let g = test_gui("events", None);
+        let mut req = Request::get("/api/host/events").header("host", "127.0.0.1:12340").body(Body::empty()).unwrap();
+        req.extensions_mut().insert(ConnectInfo::<SocketAddr>("127.0.0.1:5000".parse().unwrap()));
+        // Headers only: the stream never ends.
+        let res = g.router().oneshot(req).await.unwrap();
+        assert_eq!(res.status(), StatusCode::OK);
+        assert_eq!(res.headers()[header::CONTENT_TYPE], "text/event-stream");
+        assert_eq!(res.headers()["x-accel-buffering"], "no");
     }
 
     #[tokio::test]

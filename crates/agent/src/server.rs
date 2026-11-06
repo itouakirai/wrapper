@@ -439,7 +439,9 @@ async fn events(State(a): State<AppState>) -> impl IntoResponse {
         let ev = ev.ok()?;
         Some(Ok::<_, Infallible>(SseEvent::default().json_data(ev).ok()?))
     });
-    Sse::new(stream).keep_alive(KeepAlive::default())
+    // Reverse proxies (nginx) buffer responses by default, which holds the
+    // stream back; this tells them not to.
+    ([("x-accel-buffering", "no")], Sse::new(stream).keep_alive(KeepAlive::default()))
 }
 
 // ------------------------------------------------- session, settings, stats
