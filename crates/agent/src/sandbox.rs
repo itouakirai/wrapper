@@ -82,7 +82,8 @@ pub fn can_run_privileged() -> bool {
 /// (Ubuntu 24.04's AppArmor policy, which also covers container root) would
 /// refuse the rootless sandbox's uid_map.
 pub fn prefers_privileged() -> bool {
-    unsafe { libc::geteuid() } == 0 && has_cap_sys_admin()
+    let euid = unsafe { libc::geteuid() };
+    euid == 0 && has_cap_sys_admin()
 }
 
 /// Why the rootless sandbox cannot write to `rootfs`, if it cannot.
