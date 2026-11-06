@@ -76,6 +76,15 @@ pub fn can_run_privileged() -> bool {
     has_cap_sys_admin()
 }
 
+/// Running as root with CAP_SYS_ADMIN (`sudo`, a container with
+/// `cap_add: SYS_ADMIN` or `--privileged`): the privileged sandbox works and
+/// a user namespace buys nothing. Hosts that restrict user namespaces
+/// (Ubuntu 24.04's AppArmor policy, which also covers container root) would
+/// refuse the rootless sandbox's uid_map.
+pub fn prefers_privileged() -> bool {
+    unsafe { libc::geteuid() } == 0 && has_cap_sys_admin()
+}
+
 /// Why the rootless sandbox cannot write to `rootfs`, if it cannot.
 ///
 /// Only our own uid is mapped into the user namespace, so the sandbox setup

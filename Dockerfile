@@ -4,10 +4,10 @@
 #
 #   docker build -t ghcr.io/itouakirai/wrapper:latest .
 #
-# The image runs the native multi-account agent: lite runs chrooted in a user
-# namespace inside the container, so the container needs seccomp/apparmor
-# relaxed (see compose.yaml) or --privileged. x86_64 (linux/amd64) only: lite
-# is an x86_64 Android binary.
+# The image runs the native multi-account agent: lite runs chrooted in its own
+# mount + PID namespace inside the container, so the container needs
+# CAP_SYS_ADMIN and seccomp/apparmor relaxed (see compose.yaml) or
+# --privileged. x86_64 (linux/amd64) only: lite is an x86_64 Android binary.
 ARG NDK_VERSION=23b
 
 FROM debian:13-slim AS lite

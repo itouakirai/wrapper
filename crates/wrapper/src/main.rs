@@ -75,7 +75,9 @@ struct AgentArgs {
     host: String,
     #[arg(long, default_value_t = 12340, env = "WRAPPER_PORT")]
     port: u16,
-    #[arg(long, value_enum, default_value_t = RuntimeKind::Auto)]
+    /// How lite runs. `auto`: `direct` when --lite-bin exists, else the
+    /// sandbox: privileged as root with CAP_SYS_ADMIN, rootless otherwise.
+    #[arg(long, value_enum, default_value_t = RuntimeKind::Auto, env = "WRAPPER_RUNTIME")]
     runtime: RuntimeKind,
     /// Wrapper rootfs for the sandbox runtimes [default: <exe dir>/rootfs].
     #[arg(long)]
@@ -326,7 +328,10 @@ fn resolve_runtime(args: &AgentArgs) -> anyhow::Result<(LiteRuntime, Layout)> {
             let rootfs = std::fs::canonicalize(&rootfs).with_context(|| format!("rootfs {}", rootfs.display()))?;
             let helper = std::env::current_exe().context("cannot locate own executable")?;
             let layout = Layout { state_dir: rootfs.join("data"), lite_root: "/data".into() };
-            let privileged = kind == RuntimeKind::SandboxPrivileged || rootless_needs_privileged(&rootfs)?;
+            let privileged = kind == RuntimeKind::SandboxPrivileged
+                || (args.runtime == RuntimeKind::Auto && prefers_privileged())
+                || rootless_needs_privileged(&rootfs)?;
+            tracing::info!("lite runtime: {} sandbox in {}", if privileged { "privileged" } else { "rootless" }, rootfs.display());
             (LiteRuntime::Sandbox { helper, rootfs, privileged }, layout)
         }
     })
@@ -349,6 +354,16 @@ fn rootless_needs_privileged(rootfs: &Path) -> anyhow::Result<bool> {
 #[cfg(not(target_os = "linux"))]
 fn rootless_needs_privileged(_rootfs: &Path) -> anyhow::Result<bool> {
     Ok(false)
+}
+
+#[cfg(target_os = "linux")]
+fn prefers_privileged() -> bool {
+    wrapper_agent::sandbox::prefers_privileged()
+}
+
+#[cfg(not(target_os = "linux"))]
+fn prefers_privileged() -> bool {
+    false
 }
 
 async fn run_agent(args: AgentArgs) -> anyhow::Result<()> {

@@ -135,10 +135,14 @@ Ctrl+C stops the lite processes and powers the guest off cleanly.
 
 ### Docker
 
-The image `ghcr.io/itouakirai/wrapper` runs the native agent (lite in a
-user-namespace chroot inside the container, no QEMU) with the web panel and
-the API on port **12340**. It is the way to run wrapper on a Linux server or
-NAS, and on **macOS**.
+The image `ghcr.io/itouakirai/wrapper` runs the native agent (lite chrooted
+in its own mount and PID namespace inside the container, no QEMU) with the
+web panel and the API on port **12340**. It is the way to run wrapper on a
+Linux server or NAS, and on **macOS**.
+
+The container needs `CAP_SYS_ADMIN` and Docker's seccomp / AppArmor
+profiles relaxed, to mount `/proc` for lite. `compose.yaml` sets this up
+(`cap_add: SYS_ADMIN`, `security_opt`).
 
 | Tag | Contents |
 |---|---|
@@ -201,7 +205,7 @@ lists them).
 
 ```bash
 docker run -d --name wrapper --restart unless-stopped \
-  --security-opt seccomp=unconfined --security-opt apparmor=unconfined \
+  --cap-add SYS_ADMIN --security-opt seccomp=unconfined --security-opt apparmor=unconfined \
   -p 12340:12340 \
   -v "$PWD/wrapper-data:/app/rootfs/data" \
   -e WRAPPER_API_TOKEN=<token> \
@@ -278,13 +282,13 @@ This compiles everything from source (it downloads the Android NDK, about
 
 #### Troubleshooting
 
-- **Accounts fail to start, logs mention `unshare`, `user namespace` or
-  `Operation not permitted`**: the container lacks the
-  `seccomp:unconfined` / `apparmor:unconfined` options (keep them from
-  `compose.yaml`), or the host forbids unprivileged user namespaces. Check
-  `sysctl user.max_user_namespaces` (must be > 0) and, on Debian/Ubuntu,
-  `kernel.unprivileged_userns_clone` / `kernel.apparmor_restrict_unprivileged_userns`.
-  As a last resort run the container with `privileged: true`.
+- **Accounts fail to start, logs mention `unshare`, `mount`, `uid_map` or
+  `Operation not permitted`**: the container lacks `cap_add: SYS_ADMIN` or
+  the `seccomp:unconfined` / `apparmor:unconfined` options (take them from
+  the current `compose.yaml`; compose files from before v3.0.4 do not have
+  `cap_add`). The startup log says which sandbox is used:
+  `lite runtime: privileged sandbox` is the expected one in Docker. As a last
+  resort run the container with `privileged: true`.
 - **Panel unreachable from other machines**: check `WRAPPER_BIND`, the host
   firewall, and that the port is published (`docker compose ps`).
 - **Logins time out**: Apple may be unreachable from the server; set

@@ -33,7 +33,13 @@ services:
       # Proxy for lite and Apple catalog lookups, e.g. http://host:7890.
       WRAPPER_PROXY: ${WRAPPER_PROXY:-}
       WRAPPER_LOG: ${WRAPPER_LOG:-info}
-    # lite is started in a user namespace + chroot inside the container.
+    # lite runs chrooted in its own mount + PID namespace inside the
+    # container (wrapper's privileged sandbox), which needs mount():
+    # CAP_SYS_ADMIN, and Docker's seccomp/AppArmor profiles relaxed. This
+    # works on every host, including those that restrict user namespaces
+    # (Ubuntu 24.04).
+    cap_add:
+      - SYS_ADMIN
     security_opt:
       - seccomp:unconfined
       - apparmor:unconfined

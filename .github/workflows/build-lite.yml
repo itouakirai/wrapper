@@ -374,13 +374,19 @@ jobs:
           file: docker/prebuilt.Dockerfile
           load: true
           tags: wrapper:ci
+      # Same container options as compose.yaml. The runner is Ubuntu 24.04,
+      # whose AppArmor policy refuses user namespaces even to container root,
+      # like many servers: the agent must pick the privileged sandbox.
       - name: Smoke test (agent up, lite starts in the container's sandbox)
         run: |
-          docker run -d --name wrapper-ci --security-opt seccomp=unconfined --security-opt apparmor=unconfined \
+          docker run -d --name wrapper-ci --cap-add SYS_ADMIN \
+            --security-opt seccomp=unconfined --security-opt apparmor=unconfined \
             -p 12399:12340 wrapper:ci
           for i in $(seq 1 30); do curl -sf localhost:12399/status && break; sleep 1; done
           curl -sf localhost:12399/status | grep -q '"code":0' || { docker logs wrapper-ci; exit 1; }
-          docker exec wrapper-ci /app/wrapper sandbox-exec --rootfs /app/rootfs -- /system/bin/lite --help
+          docker logs wrapper-ci 2>&1 | tee agent.log
+          grep -q 'lite runtime: privileged sandbox' agent.log
+          docker exec wrapper-ci /app/wrapper sandbox-exec --privileged --rootfs /app/rootfs -- /system/bin/lite --help
           docker rm -f wrapper-ci
       - id: meta
         uses: docker/metadata-action@v6
