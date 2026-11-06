@@ -15,3 +15,6 @@ rootfs/data/accounts
 rootfs/data/accounts.json
 *.deb
 dist*
+.env
+docker
+rootfs/data

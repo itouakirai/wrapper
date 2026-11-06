@@ -12,7 +12,7 @@ Apple's Android libraries and therefore stays C++. Its HTTP API (`/m3u8`,
 Rust side builds on.
 
 ```
-host (Windows / macOS / Linux / Android)        QEMU guest, or Linux natively
+host (Windows / Linux / Android)                QEMU guest, or Linux natively
 ┌──────────────────────────────┐               ┌───────────────────────────────────┐
 │ wrapper gui        (phase 3) │   hostfwd     │ wrapper agent                     │
 │  web panel, QEMU launcher,   │──────────────▶│  aggregated lite API + /api       │

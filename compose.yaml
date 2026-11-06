@@ -1,15 +1,39 @@
+# wrapper in Docker: the native multi-account agent with the web panel and the
+# API on port 12340. Settings come from .env (copy .env.example). See the
+# Docker section of README.md.
+#
+#   docker compose up -d                 # start (pulls the image)
+#   docker compose pull && docker compose up -d   # update
+#   docker compose logs -f               # logs
 services:
   wrapper:
-    build: .
+    # Prebuilt image: `latest` = newest release, `nightly` = newest commit,
+    # or a version such as `3.0.4`. To build it yourself instead:
+    #   docker build -t ghcr.io/itouakirai/wrapper:latest .
+    image: ghcr.io/itouakirai/wrapper:${WRAPPER_TAG:-latest}
+    # lite is an x86_64 binary; on ARM hosts (Apple Silicon) Docker emulates it.
+    platform: linux/amd64
+    restart: unless-stopped
     volumes:
-      - ./rootfs/data:/app/rootfs/data
+      # Accounts, sessions, settings and statistics. Back this directory up
+      # (or use Backup in the panel).
+      - ${WRAPPER_DATA_DIR:-./rootfs/data}:/app/rootfs/data
     ports:
-      - "12340:12340"
+      # Listen address on the host: 127.0.0.1 keeps it on this machine.
+      - "${WRAPPER_BIND:-0.0.0.0}:${WRAPPER_HOST_PORT:-12340}:12340"
     environment:
+      # Management token: protects /login, /logout and /api, signs in to the
+      # panel. Required for public mode; strongly recommended otherwise.
       WRAPPER_API_TOKEN: ${WRAPPER_API_TOKEN:-}
-      # Public mode (anyone may add their own account); needs the token.
+      # Public mode: anyone who opens the address may add their own account.
       WRAPPER_PUBLIC: ${WRAPPER_PUBLIC:-false}
-    # lite is started in a user namespace + chroot.
+      # Cap on active accounts in public mode (0 = no limit); empty keeps
+      # what is set in the panel.
+      WRAPPER_MAX_ACCOUNTS: ${WRAPPER_MAX_ACCOUNTS:-}
+      # Proxy for lite and Apple catalog lookups, e.g. http://host:7890.
+      WRAPPER_PROXY: ${WRAPPER_PROXY:-}
+      WRAPPER_LOG: ${WRAPPER_LOG:-info}
+    # lite is started in a user namespace + chroot inside the container.
     security_opt:
       - seccomp:unconfined
       - apparmor:unconfined

@@ -209,7 +209,21 @@ struct SandboxArgs {
     command: Vec<OsString>,
 }
 
+/// Drops `WRAPPER_*` variables set to an empty string, so `VAR=` (as Docker
+/// Compose passes `${VAR:-}`) means "not set" instead of an invalid value.
+fn unset_empty_env() {
+    let empty: Vec<OsString> = std::env::vars_os()
+        .filter(|(k, v)| v.is_empty() && k.to_str().is_some_and(|k| k.starts_with("WRAPPER_")))
+        .map(|(k, _)| k)
+        .collect();
+    for k in empty {
+        // Single-threaded: runs first thing in main, before any thread starts.
+        std::env::remove_var(k);
+    }
+}
+
 fn main() {
+    unset_empty_env();
     let cli = Cli::parse();
     let code = match cli.cmd.unwrap_or_else(|| Cmd::Gui(GuiArgs::default())) {
         Cmd::Gui(args) => run_async(run_gui(args)),

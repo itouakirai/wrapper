@@ -94,13 +94,13 @@ impl Component {
     }
 }
 
-/// Release platform name of this build (`linux-x86_64`, ...).
+/// Release platform name of this build (`linux-x86_64`, ...). macOS has no
+/// release packages since v3.0.4 (it runs the Docker image instead).
 pub fn platform() -> Option<&'static str> {
     Some(match (std::env::consts::OS, std::env::consts::ARCH) {
         ("linux", "x86_64") => "linux-x86_64",
         ("linux", "aarch64") => "linux-aarch64",
         ("windows", "x86_64") => "windows-x86_64",
-        ("macos", "aarch64") => "macos-aarch64",
         ("android", "aarch64") => "android-aarch64",
         _ => return None,
     })
@@ -436,7 +436,9 @@ impl Plan {
 /// them even when their digest already matches. Hashes local trees, so run
 /// it off the async runtime.
 pub fn plan(install: &Install, manifest: Manifest, only: &[Component], force: bool) -> anyhow::Result<Plan> {
-    let plat = platform().context("no prebuilt releases for this platform")?;
+    let plat = platform().context(
+        "no prebuilt releases for this platform (macOS: run the Docker image, see the README's Docker section)",
+    )?;
     let assets = manifest
         .platforms
         .get(plat)

@@ -12,14 +12,14 @@ whose storefront can serve the item. The API is also compatible with
 and other clients work unchanged.
 
 Everything on the host is one Rust binary, `wrapper`, with a web panel. The
-Apple-side `lite` process runs inside a small QEMU guest (any OS) or natively
-on Linux x86_64. See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for the
-design.
+Apple-side `lite` process runs inside a small QEMU guest (Windows, Android,
+Linux aarch64) or natively on Linux x86_64, also in [Docker](#docker). See
+[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for the design.
 
 ```
 client ──HTTP──▶ wrapper agent ──▶ lite (account A, jp)
                      │          └─▶ lite (account B, us) …
-                     └─ inside QEMU (Windows / macOS / Android / Linux) or native Linux
+                     └─ inside QEMU (Windows / Android / Linux) or native Linux / Docker
 ```
 
 ## Quick start
@@ -32,10 +32,12 @@ Download the package for your platform from the
 | Platform | Package |
 |---|---|
 | Windows x86_64 | `wrapper-<version>-windows-x86_64.zip` |
-| macOS Apple Silicon | `wrapper-<version>-macos-aarch64.tar.gz` |
 | Linux x86_64 (QEMU or native) | `wrapper-<version>-linux-x86_64.tar.gz` |
 | Linux aarch64 | `wrapper-<version>-linux-aarch64.tar.gz` |
 | Android | `wrapper-<version>-android.apk`, or `wrapper-<version>-android-aarch64.tar.gz` for Termux |
+| Linux servers, NAS, **macOS** | the Docker image `ghcr.io/itouakirai/wrapper`, see [Docker](#docker) |
+
+There is no macOS package (since v3.0.4): on a Mac, run the Docker image.
 
 1. Extract and run `wrapper` (`wrapper.exe` on Windows). The panel opens at
    `http://127.0.0.1:12340`, the same address as the API.
@@ -133,16 +135,162 @@ Ctrl+C stops the lite processes and powers the guest off cleanly.
 
 ### Docker
 
+The image `ghcr.io/itouakirai/wrapper` runs the native agent (lite in a
+user-namespace chroot inside the container, no QEMU) with the web panel and
+the API on port **12340**. It is the way to run wrapper on a Linux server or
+NAS, and on **macOS**.
+
+| Tag | Contents |
+|---|---|
+| `latest` | newest release |
+| `3.0.4`, `3.0` | a release / the newest release of a minor version |
+| `nightly` | newest commit on `lite` |
+
+The image is `linux/amd64` only (lite is an x86_64 Android binary). Docker
+emulates it on ARM: see [macOS](#macos-apple-silicon) and
+[ARM Linux](#arm-linux) below.
+
+#### Start with Docker Compose
+
+Needs Docker with the Compose plugin (`docker compose version`).
+
 ```bash
-WRAPPER_API_TOKEN=<secret> docker compose up -d --build
-docker compose exec wrapper /app/wrapper login --token <secret>
+mkdir wrapper && cd wrapper
+curl -fsSLO https://raw.githubusercontent.com/itouakirai/wrapper/lite/compose.yaml
+curl -fsSL -o .env https://raw.githubusercontent.com/itouakirai/wrapper/lite/.env.example
+
+# Set a management token in .env (WRAPPER_API_TOKEN=...), for example:
+sed -i.bak "s/^WRAPPER_API_TOKEN=.*/WRAPPER_API_TOKEN=$(openssl rand -hex 24)/" .env
+
+docker compose up -d
+docker compose logs -f        # Ctrl+C stops following, not the container
 ```
 
-The container runs the native agent; account data lives in `./rootfs/data`.
-The panel is at `http://<host>:12340`; set `WRAPPER_PUBLIC=true` in `.env`
-for public mode.
-User namespaces need `seccomp`/`apparmor` relaxed (as in `compose.yaml`) or
-`--privileged`.
+Then:
+
+1. Open `http://<host>:12340` (`http://127.0.0.1:12340` on the same machine)
+   and sign in with the token from `.env`.
+2. **Accounts → Add account**: Apple ID, password, and the 2FA code when
+   Apple asks for it. Or from the command line:
+   `docker compose exec wrapper /app/wrapper login --token <token>`.
+3. Point your client (AppleMusicDecrypt, …) at `http://<host>:12340`.
+
+#### Settings
+
+Set in `.env` (see [.env.example](.env.example)); empty means "not set".
+Apply changes with `docker compose up -d`.
+
+| Variable | Default | Meaning |
+|---|---|---|
+| `WRAPPER_API_TOKEN` | — | Management token: protects `/login`, `/logout`, `/api` and signs in to the panel. Required for public mode. Without it anyone who can reach the port can manage the accounts. |
+| `WRAPPER_TAG` | `latest` | Image tag (`latest`, `nightly`, `3.0.4`, …) |
+| `WRAPPER_DATA_DIR` | `./rootfs/data` | Host directory for the account data |
+| `WRAPPER_BIND` | `0.0.0.0` | Host address the port is published on; `127.0.0.1` keeps it local (for a reverse proxy on the same machine) |
+| `WRAPPER_HOST_PORT` | `12340` | Host port |
+| `WRAPPER_PUBLIC` | `false` | [Public mode](#public-mode): visitors can add their own accounts |
+| `WRAPPER_MAX_ACCOUNTS` | — | Most active accounts public mode accepts (`0`: no limit). Saved; also changeable in the panel |
+| `WRAPPER_PROXY` | — | Proxy for lite and Apple catalog lookups, e.g. `http://192.168.1.2:7890`, `socks5://…` |
+| `WRAPPER_LOG` | `info` | Log level: `trace`, `debug`, `info`, `warn`, `error` |
+
+Other agent options can be appended to the command, for example
+`command: ["/app/wrapper", "agent", "--instance-concurrency", "4"]` in
+`compose.yaml` (`docker compose run --rm wrapper /app/wrapper agent --help`
+lists them).
+
+#### Without Compose
+
+```bash
+docker run -d --name wrapper --restart unless-stopped \
+  --security-opt seccomp=unconfined --security-opt apparmor=unconfined \
+  -p 12340:12340 \
+  -v "$PWD/wrapper-data:/app/rootfs/data" \
+  -e WRAPPER_API_TOKEN=<token> \
+  ghcr.io/itouakirai/wrapper:latest
+```
+
+#### Update
+
+```bash
+docker compose pull && docker compose up -d
+```
+
+Accounts keep running from their saved sessions; nobody has to log in again.
+(`wrapper update` is for the packages, not for the container.) Pin a version
+with `WRAPPER_TAG=3.0.4` to update only when you choose.
+
+#### Data and backups
+
+Everything lives in `WRAPPER_DATA_DIR` (`./rootfs/data`): each account's
+login session, device id, the settings and the statistics. Keep it when you
+recreate the container, and keep it private: it lets anyone use the accounts.
+
+- Back up from the panel (**Backup**), or into the data directory with
+  `docker compose exec wrapper /app/wrapper backup --token <token> -o /app/rootfs/data/backup.tar.gz`.
+- Move an existing install (package, QEMU or another server) into Docker:
+  start the container, then **Backup → Directly from another server** with
+  the old address and token. See [Backup and migration](#backup-and-migration).
+
+#### Public mode in Docker
+
+Set `WRAPPER_API_TOKEN` and `WRAPPER_PUBLIC=true` (optionally
+`WRAPPER_MAX_ACCOUNTS=10`), then `docker compose up -d`. Visitors see the
+public page at `http://<host>:12340`; you open the panel with **Admin** and
+the token. Each logged-in account is a lite process of about 150 MB of
+memory: size `WRAPPER_MAX_ACCOUNTS` to the machine.
+
+Behind a reverse proxy (HTTPS), set `WRAPPER_BIND=127.0.0.1` and proxy to
+`http://127.0.0.1:12340`. For nginx no special buffering settings are needed
+(live updates send `X-Accel-Buffering: no`).
+
+#### macOS (Apple Silicon)
+
+1. Install [Docker Desktop](https://www.docker.com/products/docker-desktop/)
+   (or OrbStack / Colima).
+2. Docker Desktop: **Settings → General → Use Rosetta for x86_64/amd64
+   emulation on Apple Silicon** on (the default in current versions).
+3. Follow [Start with Docker Compose](#start-with-docker-compose).
+   `compose.yaml` already asks for `platform: linux/amd64`.
+
+The panel is then at `http://127.0.0.1:12340`. On Apple Silicon lite runs
+translated by Rosetta, so accounts take longer to start than on an x86_64
+machine. Intel Macs run the image natively. If accounts do not start, see
+[Troubleshooting](#troubleshooting) and please open an issue with
+`docker compose logs`.
+
+#### ARM Linux
+
+On ARM servers (Raspberry Pi, Oracle Ampere, …) prefer the
+`linux-aarch64` package, which runs lite in QEMU. The amd64 image only runs
+there with x86_64 emulation installed (`docker run --privileged --rm
+tonistiigi/binfmt --install amd64`), and is slow.
+
+#### Build the image yourself
+
+```bash
+git clone https://github.com/itouakirai/wrapper && cd wrapper
+docker build -t ghcr.io/itouakirai/wrapper:latest .
+docker compose up -d        # uses the local image
+```
+
+This compiles everything from source (it downloads the Android NDK, about
+1 GB). CI builds the published image from the release package instead
+(`docker/prebuilt.Dockerfile`).
+
+#### Troubleshooting
+
+- **Accounts fail to start, logs mention `unshare`, `user namespace` or
+  `Operation not permitted`**: the container lacks the
+  `seccomp:unconfined` / `apparmor:unconfined` options (keep them from
+  `compose.yaml`), or the host forbids unprivileged user namespaces. Check
+  `sysctl user.max_user_namespaces` (must be > 0) and, on Debian/Ubuntu,
+  `kernel.unprivileged_userns_clone` / `kernel.apparmor_restrict_unprivileged_userns`.
+  As a last resort run the container with `privileged: true`.
+- **Panel unreachable from other machines**: check `WRAPPER_BIND`, the host
+  firewall, and that the port is published (`docker compose ps`).
+- **Logins time out**: Apple may be unreachable from the server; set
+  `WRAPPER_PROXY`.
+- `curl http://127.0.0.1:12340/health` reports whether an account can
+  really deliver a key (HTTP 503 when none can), for uptime checks.
 
 ## Commands
 

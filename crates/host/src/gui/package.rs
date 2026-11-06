@@ -30,7 +30,6 @@ impl DownloadProgress {
 pub fn package_name() -> Option<&'static str> {
     let name = match (std::env::consts::OS, std::env::consts::ARCH) {
         ("windows", "x86_64") => "wrapper-windows-x86_64.zip",
-        ("macos", "aarch64") => "wrapper-macos-aarch64.zip",
         ("linux", "x86_64") => "wrapper-linux-x86_64.zip",
         ("linux", "aarch64") => "wrapper-linux-aarch64.zip",
         ("android", "aarch64") => "wrapper-android-aarch64.zip",
