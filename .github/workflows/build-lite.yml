@@ -123,7 +123,7 @@ jobs:
           - name: windows-x86_64
             os: windows-2022
           - name: macos-aarch64
-            os: macos-14
+            os: macos-15
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v7
