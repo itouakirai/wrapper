@@ -11,8 +11,8 @@ android {
         applicationId "com.worldobservationlog.wrapperlite"
         minSdk 24
         targetSdk 28
-        versionCode 6
-        versionName "3.0.3"
+        versionCode 7
+        versionName "3.0.4"
 
         // libwrapper.so (the Rust wrapper binary) and the bundled QEMU are
         // arm64 only. targetSdk stays 28 so binaries in filesDir may be executed.
